@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  ::selection {
+    background-color: theme("colors.trail.500");
+    color: theme("colors.paper.DEFAULT");
+  }
+
+  /* Visible keyboard focus everywhere, in the brand accent rather than
+     the browser default blue — never removed, only restyled. */
+  :focus-visible {
+    outline: 2px solid theme("colors.trail.500");
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: theme("fontFamily.display");
+    letter-spacing: 0.01em;
+  }
+
+  /* Tabular numerals for prices so digits align in carts/tables. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer utilities {
+  /* The signature motif: concentric contour lines standing in for the
+     brand's "path" idea. Two variants — light lines for dark (ink) panels,
+     dark lines for paper panels — used sparingly as texture, never as
+     the whole show. */
+  .bg-topo-dark {
+    background-image:
+      repeating-radial-gradient(circle at 15% 20%, transparent 0, transparent 22px, rgba(255,255,255,0.05) 23px, transparent 24px),
+      repeating-radial-gradient(circle at 85% 75%, transparent 0, transparent 30px, rgba(255,255,255,0.045) 31px, transparent 32px),
+      repeating-radial-gradient(circle at 50% 100%, transparent 0, transparent 26px, rgba(227,168,87,0.06) 27px, transparent 28px);
+  }
+
+  .bg-topo-light {
+    background-image:
+      repeating-radial-gradient(circle at 10% 10%, transparent 0, transparent 24px, rgba(11,11,12,0.035) 25px, transparent 26px),
+      repeating-radial-gradient(circle at 90% 60%, transparent 0, transparent 28px, rgba(11,11,12,0.03) 29px, transparent 30px);
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Leaflet's default marker icons resolve relative to a bundler-specific
+   path and break under Vite unless overridden — components set their own
+   L.icon() with explicit URLs (see MapPicker.jsx), but this keeps the
+   base popup/attribution chrome on-brand. */
+.leaflet-container {
+  font-family: theme("fontFamily.body");
+  border-radius: 0.75rem;
+}
+.leaflet-popup-content-wrapper {
+  border-radius: 0.5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
