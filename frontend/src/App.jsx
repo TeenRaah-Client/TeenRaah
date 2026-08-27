@@ -5,6 +5,7 @@ import { Toaster } from "react-hot-toast";
 import Navbar from "./components/layout/Navbar";
 import Footer from "./components/layout/Footer";
 import CartDrawer from "./components/layout/CartDrawer";
+import ChatWidget from "./components/chat/ChatWidget";
 import { ProtectedRoute, AdminRoute } from "./components/ui/ProtectedRoute";
 import PageTransition from "./components/ui/PageTransition";
 
@@ -41,6 +42,7 @@ const StorefrontLayout = ({ children }) => (
     <CartDrawer />
     <main className="flex-1">{children}</main>
     <Footer />
+    <ChatWidget />
   </div>
 );
 

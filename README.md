@@ -26,6 +26,9 @@ TeenRaah/
 | Admin can see customer locations                | Every order shows the exact delivery pin; a dedicated Customers → Map view plots every saved address |
 | Product images & videos                          | Cloudinary, uploaded straight from the admin product form |
 | **AI Photo Studio** (background removal)          | Admin drops in a raw bag photo → background removed and recomposited on a clean white background, Amazon-style — no new signup, uses your existing Cloudinary account |
+| **TeenRaah Assistant** (chatbot)                   | Customer-facing shopping assistant, streams real-time answers, grounded in your actual product/order data via tool-calling (never invents prices or stock) — powered by OpenRouter |
+| **AI concept image generation**                    | Customers can ask the assistant to visualize a custom bag idea; generation is scoped to bags/travel gear only, gated behind login, and rate-limited (real per-call cost, no free tier) |
+| **Firewall / hardening**                           | helmet security headers, NoSQL-injection sanitization, HTTP parameter pollution protection, plus dedicated rate limits on the chat and image-generation endpoints |
 | Payments                                        | Razorpay (test mode is free) — order created & priced server-side, signature verified before an order is ever written to the DB |
 | Order tracking like Flipkart                     | Animated status timeline + **live** updates via Socket.io (no refresh needed) |
 | Email verification                               | Resend sends a 6-digit OTP on signup; unverified accounts can't check out |
@@ -90,6 +93,41 @@ where to get each one for free:
 | `VITE_ADMIN_PATH` | Change this to something non-guessable before deploying. Don't link to it anywhere public. |
 | everything else | Already set for local development |
 
+### TeenRaah Assistant needs one key — and a cost decision
+
+The chat widget (bottom-right on every storefront page) is a real, tool-calling shopping assistant, not a
+canned FAQ bot. It's grounded in your actual database: it calls `search_products`/`track_order` behind the
+scenes rather than inventing prices, stock, or order details, and it flatly declines to discuss anything
+outside TeenRaah shopping.
+
+1. Get one key at [openrouter.ai/keys](https://openrouter.ai/keys) → set `OPENROUTER_API_KEY` in `backend/.env`.
+2. That's it for text chat — `OPENROUTER_MODEL` defaults to `meta-llama/llama-3.3-70b-instruct:free`, a
+   **free** model as of this build. Free-tier model availability on OpenRouter rotates fairly often though —
+   check [openrouter.ai/models](https://openrouter.ai/models) before assuming this specific one is still free
+   or even still listed, and swap the env var if it's moved on.
+
+**AI concept image generation is a different story — it is not free on any current OpenRouter model.**
+Every image is billed per call (nothing charged on failure, per OpenRouter's docs). Because of that:
+- The model itself can only *suggest* generating an image — it can never trigger one on its own. Actually
+  spending money always requires the customer to be logged in and click a real "Generate Image" button.
+- It's rate-limited two ways: an hourly cap (`imageGenLimiter`, resets on server restart) and a persistent
+  daily-per-user cap stored in Redis (`AI_IMAGE_DAILY_CAP_PER_USER`, default 5 — survives restarts, since
+  this is the one that actually matters for cost control).
+- Every generation is wrapped in a fixed "professional product photography of a [bag/gear category]"
+  template server-side, regardless of what the customer typed, plus a basic keyword filter — so this can't
+  be turned into a general-purpose image generator even by a crafted request.
+
+If you'd rather launch with chat only and add image generation later, just leave `OPENROUTER_IMAGE_MODEL`
+as-is — the feature is additive and nothing else breaks without it, generation calls will simply fail
+gracefully with a "try again" message until real usage limits are tuned to the client's budget.
+
+### Firewall
+
+`helmet`, `express-mongo-sanitize`, and `hpp` are applied globally in `server.js` (see
+`backend/middleware/security.js`) — security headers, NoSQL-injection sanitization on
+`req.body`/`query`/`params`, and HTTP parameter pollution protection. This is the standard hardening layer
+for a Node API, not a network appliance; nothing here needs configuration or an account.
+
 ---
 
 ## 3. Running it locally
@@ -150,3 +188,12 @@ Netlify for the frontend (it's a static Vite build).
   in `backend/utils/constants.js` — change them to match the client's actual pricing.
 - The 10 demo products use placeholder photos (picsum.photos) so the store isn't empty on first run.
   Replace them via the admin panel whenever real product photography is ready.
+- **The chatbot's SSE streaming pipeline was tested against a mock OpenRouter server** standing in for the
+  real API (no network access to openrouter.ai from the sandbox this was built in) — verified end-to-end
+  through the real backend and a real SSE client: tool-call detection, tool execution against the actual
+  Product/Order models, error handling, and the token-by-token stream relay all confirmed working correctly
+  (this process actually caught and fixed a real bug — direct answers with no tool call were arriving as
+  one blind chunk instead of a paced stream, now fixed in `chatController.js`). What's *not* verified is
+  OpenRouter's real API responses, since that needs your real key — the request/response shapes used here
+  come straight from OpenRouter's own current docs, not memory, but model behavior itself (whether it calls
+  tools sensibly, how it phrases things) is only knowable once it's running against a real key.

@@ -12,6 +12,7 @@ import "./config/redis.js"; // connects on import
 import { initSocket } from "./sockets/index.js";
 import { notFound, errorHandler } from "./middleware/errorHandler.js";
 import { generalApiLimiter } from "./middleware/rateLimiter.js";
+import { applyFirewall } from "./middleware/security.js";
 
 import authRoutes from "./routes/authRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
@@ -22,6 +23,7 @@ import paymentRoutes from "./routes/paymentRoutes.js";
 import orderRoutes, { adminOrderRouter } from "./routes/orderRoutes.js";
 import locationRoutes from "./routes/locationRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
+import chatRoutes from "./routes/chatRoutes.js";
 
 const app = express();
 const httpServer = createServer(app);
@@ -47,6 +49,10 @@ app.use(
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+// Sanitizes req.body/query/params against NoSQL-injection payloads and HTTP
+// parameter pollution — must run after the body parsers above, since it
+// needs req.body to already be populated.
+applyFirewall(app);
 if (process.env.NODE_ENV !== "production") app.use(morgan("dev"));
 app.use("/api", generalApiLimiter);
 
@@ -59,6 +65,7 @@ app.use("/api/coupons", couponRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/location", locationRoutes);
+app.use("/api/chat", chatRoutes);
 
 // Secret admin panel's API surface — the frontend route that calls these
 // lives at a hidden, non-guessable path (see frontend VITE_ADMIN_PATH),
