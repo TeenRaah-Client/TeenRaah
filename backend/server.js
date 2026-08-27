@@ -8,7 +8,7 @@ import { createServer } from "http";
 dotenv.config();
 
 import { connectDB } from "./config/db.js";
-import "./config/redis.js"; // connects on import
+import "./config/redis.js";
 import { initSocket } from "./sockets/index.js";
 import { notFound, errorHandler } from "./middleware/errorHandler.js";
 import { generalApiLimiter } from "./middleware/rateLimiter.js";
@@ -26,34 +26,55 @@ import adminRoutes from "./routes/adminRoutes.js";
 import chatRoutes from "./routes/chatRoutes.js";
 
 const app = express();
+
+// Render runs the application behind a reverse proxy.
+// This allows express-rate-limit to correctly handle X-Forwarded-For.
+app.set("trust proxy", 1);
+
 const httpServer = createServer(app);
 const PORT = process.env.PORT || 5000;
 
 // ---- CORS ----
-// The client's final domain isn't locked in yet, so this reads from an env
-// list rather than a hardcoded origin — update ALLOWED_ORIGINS in .env
-// (no code changes) once the client picks a domain.
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || process.env.CLIENT_URL || "http://localhost:5173").split(
-  ","
-);
+const allowedOrigins = (
+  process.env.ALLOWED_ORIGINS ||
+  process.env.CLIENT_URL ||
+  "http://localhost:5173"
+)
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
-      callback(new Error("Not allowed by CORS"));
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("Not allowed by CORS"));
     },
     credentials: true,
   })
 );
 
+// ---- Body Parsers ----
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
+
+// ---- Cookies ----
 app.use(cookieParser());
-// Sanitizes req.body/query/params against NoSQL-injection payloads and HTTP
-// parameter pollution — must run after the body parsers above, since it
-// needs req.body to already be populated.
+
+// ---- Security ----
+// Must run after body parsers because the firewall
+// sanitizes request body/query/params.
 applyFirewall(app);
-if (process.env.NODE_ENV !== "production") app.use(morgan("dev"));
+
+// ---- Logging ----
+if (process.env.NODE_ENV !== "production") {
+  app.use(morgan("dev"));
+}
+
+// ---- API Rate Limiting ----
 app.use("/api", generalApiLimiter);
 
 // ---- Routes ----
@@ -67,28 +88,38 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/location", locationRoutes);
 app.use("/api/chat", chatRoutes);
 
-// Secret admin panel's API surface — the frontend route that calls these
-// lives at a hidden, non-guessable path (see frontend VITE_ADMIN_PATH),
-// and every request here additionally requires the x-admin-key header
-// (see middleware/auth.js requireAdmin).
+// ---- Admin Routes ----
 app.use("/api/admin", adminRoutes);
 app.use("/api/admin/products", adminProductRouter);
 app.use("/api/admin/coupons", adminCouponRouter);
 app.use("/api/admin/orders", adminOrderRouter);
 
-app.get("/", (req, res) => res.send("TeenRaah API is running"));
-app.get("/api/health", (req, res) => res.json({ status: "ok", time: new Date().toISOString() }));
+// ---- Health / Root ----
+app.get("/", (req, res) => {
+  res.send("TeenRaah API is running");
+});
 
+app.get("/api/health", (req, res) => {
+  res.json({
+    status: "ok",
+    time: new Date().toISOString(),
+  });
+});
+
+// ---- Error Handling ----
 app.use(notFound);
 app.use(errorHandler);
 
+// ---- Socket.IO ----
 initSocket(httpServer);
 
+// ---- Start Server ----
 httpServer.listen(PORT, async () => {
   try {
     await connectDB();
   } catch (err) {
     console.error("❌ Could not connect to MongoDB:", err.message);
   }
+
   console.log(`🚀 TeenRaah API running on port ${PORT}`);
 });
