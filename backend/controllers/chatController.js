@@ -221,19 +221,36 @@ export const generateConceptImage = asyncHandler(async (req, res) => {
 
   let imageResponse;
   try {
-    imageResponse = await openrouter.post("/images", {
-      model: IMAGE_MODEL,
-      prompt: buildImagePrompt(category, cleanDescription),
-      aspect_ratio: "1:1",
-      quality: "high",
-      output_format: "png",
-    });
-  } catch (err) {
-    console.error("Image generation failed:", err.response?.data || err.message);
-    // Per OpenRouter's billing model, a failed generation is never charged —
-    // safe to just ask the customer to try again.
-    return fail(res, "Couldn't generate that image right now (nothing was charged) — please try again.", 502);
-  }
+   imageResponse = await openrouter.post("/images", {
+  model: IMAGE_MODEL,
+  prompt: buildImagePrompt(category, cleanDescription),
+  aspect_ratio: "1:1",
+  quality: "high",
+  output_format: "png",
+  provider: {
+    allow_fallbacks: true,
+  },
+});
+  }  catch (err) {
+  const errorData = err.response?.data;
+
+  console.error(
+    "❌ OpenRouter image generation failed:",
+    JSON.stringify(errorData || err.message, null, 2)
+  );
+
+  const message =
+    errorData?.error?.message ||
+    errorData?.message ||
+    err.message ||
+    "Unknown OpenRouter error";
+
+  return fail(
+    res,
+    `Image generation failed: ${message}`,
+    502
+  );
+}
 
   const image = imageResponse.data?.data?.[0];
   if (!image?.b64_json) {
