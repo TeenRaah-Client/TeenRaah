@@ -6,29 +6,48 @@ import crypto from "crypto";
  * Frontend:
  *   https://teenraah.shop
  *
- * API:
+ * Backend:
  *   https://api.teenraah.shop
  *
- * The CSRF cookie is intentionally JS-readable so the frontend can
- * send its value back through the x-csrf-token header.
+ * The CSRF cookie is intentionally readable by JavaScript.
+ * The frontend sends the same value through:
+ *
+ *   x-csrf-token
+ *
+ * The backend compares the cookie value with the header value.
  */
 
-const CSRF_COOKIE_NAME = "tr_csrf";
+const CSRF_COOKIE_NAME = "tr_csrf_v2";
 const CSRF_HEADER_NAME = "x-csrf-token";
 
 const isProduction = process.env.NODE_ENV === "production";
 
+/**
+ * CSRF cookie configuration.
+ */
 const csrfCookieOptions = {
   httpOnly: false,
+
   secure: isProduction,
+
   sameSite: isProduction ? "none" : "lax",
+
+  /**
+   * Share the cookie between:
+   *
+   * teenraah.shop
+   * api.teenraah.shop
+   */
   domain: isProduction ? ".teenraah.shop" : undefined,
+
   path: "/",
+
+  // 30 days
   maxAge: 30 * 24 * 60 * 60 * 1000,
 };
 
 /**
- * Issue a CSRF token if the browser does not already have one.
+ * Issue a CSRF token if one does not already exist.
  */
 export const issueCsrfToken = (req, res, next) => {
   if (!req.cookies?.[CSRF_COOKIE_NAME]) {
@@ -54,6 +73,7 @@ const SAFE_METHODS = new Set([
  * Verify CSRF token on state-changing requests.
  */
 export const verifyCsrfToken = (req, res, next) => {
+  // Safe requests do not modify application state.
   if (SAFE_METHODS.has(req.method)) {
     return next();
   }
@@ -61,6 +81,9 @@ export const verifyCsrfToken = (req, res, next) => {
   const cookieToken = req.cookies?.[CSRF_COOKIE_NAME];
   const headerToken = req.headers[CSRF_HEADER_NAME];
 
+  /**
+   * Both tokens must exist and match.
+   */
   if (
     !cookieToken ||
     !headerToken ||

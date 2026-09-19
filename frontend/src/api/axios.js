@@ -15,7 +15,8 @@ try {
 
 /**
  * Set or clear the admin authentication key.
- * The key is kept in memory and sessionStorage only.
+ *
+ * The key is stored only for the current browser session.
  */
 export const setAdminKey = (key) => {
   adminKey = key || null;
@@ -27,7 +28,8 @@ export const setAdminKey = (key) => {
       sessionStorage.removeItem(ADMIN_KEY_STORAGE);
     }
   } catch {
-    // Ignore storage errors; in-memory authentication still works.
+    // Ignore storage errors.
+    // In-memory authentication will still work.
   }
 };
 
@@ -51,33 +53,99 @@ const attachAdminKey = (config) => {
 };
 
 /**
- * Reads the CSRF token cookie the backend issues on every response
- * (see backend/middleware/csrf.js). Not httpOnly, so it's readable here —
- * that's the point of the double-submit pattern: a cross-origin attacker
- * can't read it to forge a matching header even though the cookie itself
- * gets attached automatically.
+ * Reads the CSRF token issued by the backend.
+ *
+ * The cookie is intentionally NOT httpOnly because the frontend
+ * needs to read it and send it back through the x-csrf-token header.
  */
 export const getCsrfCookie = () => {
-  const match = document.cookie.match(/(?:^|;\s*)tr_csrf=([^;]+)/);
-  return match ? match[1] : null;
+  const match = document.cookie.match(
+    /(?:^|;\s*)tr_csrf_v2=([^;]+)/
+  );
+
+  return match ? decodeURIComponent(match[1]) : null;
 };
 
-const SAFE_METHODS = new Set(["get", "head", "options"]);
+/**
+ * Safe HTTP methods do not require CSRF protection.
+ */
+const SAFE_METHODS = new Set([
+  "get",
+  "head",
+  "options",
+]);
 
-const attachCsrfToken = (config) => {
+/**
+ * Makes sure a CSRF cookie exists before a state-changing request.
+ *
+ * This is particularly important for:
+ *
+ *   POST /auth/login
+ *   POST /auth/admin-login
+ *   POST /users/wishlist/:productId
+ *
+ * because the very first request from a fresh browser session may
+ * otherwise have no CSRF cookie yet.
+ */
+let csrfBootstrapPromise = null;
+
+const ensureCsrfToken = async () => {
+  // Already available.
+  if (getCsrfCookie()) {
+    return;
+  }
+
+  // Prevent multiple simultaneous requests from creating
+  // multiple bootstrap requests.
+  if (!csrfBootstrapPromise) {
+    csrfBootstrapPromise = axios
+      .get(`${API_BASE_URL}/csrf-token`, {
+        withCredentials: true,
+      })
+      .finally(() => {
+        csrfBootstrapPromise = null;
+      });
+  }
+
+  await csrfBootstrapPromise;
+
+  // Verify that the backend actually issued the cookie.
+  if (!getCsrfCookie()) {
+    throw new Error(
+      "Unable to initialize security token. Please refresh the page and try again."
+    );
+  }
+};
+
+/**
+ * Attach CSRF token to mutating requests.
+ */
+const attachCsrfToken = async (config) => {
   const method = (config.method || "get").toLowerCase();
-  if (SAFE_METHODS.has(method)) return config;
+
+  if (SAFE_METHODS.has(method)) {
+    return config;
+  }
+
+  await ensureCsrfToken();
 
   const token = getCsrfCookie();
-  if (token) {
-    config.headers = config.headers || {};
-    config.headers["x-csrf-token"] = token;
+
+  if (!token) {
+    throw new Error(
+      "Security token missing. Please refresh the page and try again."
+    );
   }
+
+  config.headers = config.headers || {};
+  config.headers["x-csrf-token"] = token;
+
   return config;
 };
 
 /**
- * Convert Axios errors into the application's consistent error format.
+ * Convert Axios errors into the application's consistent
+ * error format.
  */
 const unwrapError = (error) => {
   const message =
@@ -115,16 +183,28 @@ export const apiMultipart = axios.create({
 });
 
 /**
- * Automatically attach x-admin-key to every /admin/ request, and the CSRF
- * token to every mutating request.
+ * Automatically attach:
+ *
+ * - x-admin-key to admin requests
+ * - x-csrf-token to mutating requests
  */
 api.interceptors.request.use(
-  (config) => attachCsrfToken(attachAdminKey(config)),
+  async (config) => {
+    config = attachAdminKey(config);
+    config = await attachCsrfToken(config);
+
+    return config;
+  },
   (error) => Promise.reject(error)
 );
 
 apiMultipart.interceptors.request.use(
-  (config) => attachCsrfToken(attachAdminKey(config)),
+  async (config) => {
+    config = attachAdminKey(config);
+    config = await attachCsrfToken(config);
+
+    return config;
+  },
   (error) => Promise.reject(error)
 );
 
