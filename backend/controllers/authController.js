@@ -1,10 +1,13 @@
 import asyncHandler from "express-async-handler";
+import { generateSecret, generateURI, verify as verifyTotp } from "otplib";
+import QRCode from "qrcode";
 import User from "../models/User.js";
 import { ok, fail } from "../utils/apiResponse.js";
 import { generateOTP, storeOTP, verifyOTP, isOnCooldown } from "../utils/otp.js";
 import { sendOTPEmail } from "../utils/sendEmail.js";
 import { generateReferralCode } from "../utils/generateCodes.js";
-import { sendAuthCookie, clearAuthCookie } from "../utils/generateToken.js";
+import { sendAuthCookie, clearAuthCookie, signPendingTotpToken, verifyPendingTotpToken } from "../utils/generateToken.js";
+import { recordAuditLog } from "../utils/auditLog.js";
 
 // @route  POST /api/auth/register
 export const register = asyncHandler(async (req, res) => {
@@ -134,14 +137,93 @@ export const login = asyncHandler(async (req, res) => {
 // the public login form/rate-limit path or reveal whether an email is an admin.
 export const adminLogin = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
-  const user = await User.findOne({ email: email?.toLowerCase(), role: "admin" }).select("+password");
+  const user = await User.findOne({ email: email?.toLowerCase(), role: "admin" }).select("+password +totpSecret");
 
   if (!user || !(await user.comparePassword(password))) {
     return fail(res, "Invalid credentials", 401);
   }
 
+  if (user.totpEnabled) {
+    // Password is correct, but the session cookie doesn't get issued until
+    // the TOTP step also passes — this pendingToken proves step 1 happened
+    // without granting any actual access on its own.
+    const pendingToken = signPendingTotpToken(user._id.toString());
+    return ok(res, { requiresTotp: true, pendingToken }, "Enter your authenticator code");
+  }
+
   sendAuthCookie(res, user);
+  await recordAuditLog({ req, admin: user, action: "auth.admin_login", summary: `${user.name} logged into the admin panel` });
   return ok(res, { user: user.toSafeObject(), adminKey: process.env.ADMIN_PANEL_ACCESS_KEY }, "Welcome back");
+});
+
+// @route  POST /api/auth/admin-login/verify-totp   body: { pendingToken, code }
+export const verifyAdminTotp = asyncHandler(async (req, res) => {
+  const { pendingToken, code } = req.body;
+  if (!pendingToken || !code) return fail(res, "Missing verification details", 400);
+
+  let decoded;
+  try {
+    decoded = verifyPendingTotpToken(pendingToken);
+  } catch {
+    return fail(res, "Login session expired — please log in again", 401);
+  }
+
+  const user = await User.findOne({ _id: decoded.id, role: "admin" }).select("+totpSecret");
+  if (!user || !user.totpEnabled) return fail(res, "Two-factor login is not available for this account", 400);
+
+  const result = await verifyTotp({ secret: user.totpSecret, token: String(code) });
+  if (!result.valid) return fail(res, "Incorrect code — check your authenticator app and try again", 401);
+
+  sendAuthCookie(res, user);
+  await recordAuditLog({ req, admin: user, action: "auth.admin_login", summary: `${user.name} logged into the admin panel (2FA)` });
+  return ok(res, { user: user.toSafeObject(), adminKey: process.env.ADMIN_PANEL_ACCESS_KEY }, "Welcome back");
+});
+
+// ---------------- Admin 2FA setup ----------------
+
+// @route  POST /api/auth/admin/2fa/setup   (protect + requireAdmin)
+// Generates a new secret and returns a QR code to scan — NOT enabled yet
+// until confirmAdminTotp verifies the admin actually scanned it correctly.
+export const setupAdminTotp = asyncHandler(async (req, res) => {
+  const secret = generateSecret();
+  const otpauthUrl = generateURI({ issuer: "TeenRaah Admin", label: req.user.email, secret });
+  const qrCodeDataUrl = await QRCode.toDataURL(otpauthUrl);
+
+  await User.updateOne({ _id: req.user._id }, { totpSecret: secret, totpEnabled: false });
+
+  return ok(res, { qrCodeDataUrl, secret }, "Scan this with your authenticator app, then confirm with a code");
+});
+
+// @route  POST /api/auth/admin/2fa/confirm   body: { code }
+export const confirmAdminTotp = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id).select("+totpSecret");
+  if (!user.totpSecret) return fail(res, "Start setup first", 400);
+
+  const result = await verifyTotp({ secret: user.totpSecret, token: String(req.body.code) });
+  if (!result.valid) return fail(res, "Incorrect code — try again", 400);
+
+  user.totpEnabled = true;
+  await user.save();
+  await recordAuditLog({ req, action: "auth.2fa_enabled", summary: `${user.name} enabled two-factor authentication` });
+  return ok(res, {}, "Two-factor authentication enabled");
+});
+
+// @route  POST /api/auth/admin/2fa/disable   body: { code }
+// Requires a valid current code, not just being logged in — otherwise
+// anyone with a hijacked session (but not the authenticator app) could
+// quietly turn off the extra protection.
+export const disableAdminTotp = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id).select("+totpSecret");
+  if (!user.totpEnabled) return fail(res, "Two-factor authentication is not enabled", 400);
+
+  const result = await verifyTotp({ secret: user.totpSecret, token: String(req.body.code) });
+  if (!result.valid) return fail(res, "Incorrect code", 400);
+
+  user.totpEnabled = false;
+  user.totpSecret = undefined;
+  await user.save();
+  await recordAuditLog({ req, action: "auth.2fa_disabled", summary: `${user.name} disabled two-factor authentication` });
+  return ok(res, {}, "Two-factor authentication disabled");
 });
 
 // @route  POST /api/auth/logout

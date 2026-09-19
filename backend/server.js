@@ -13,6 +13,8 @@ import { initSocket } from "./sockets/index.js";
 import { notFound, errorHandler } from "./middleware/errorHandler.js";
 import { generalApiLimiter } from "./middleware/rateLimiter.js";
 import { applyFirewall } from "./middleware/security.js";
+import { issueCsrfToken, verifyCsrfToken } from "./middleware/csrf.js";
+import { handleRazorpayWebhook } from "./controllers/webhookController.js";
 
 import authRoutes from "./routes/authRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
@@ -22,7 +24,7 @@ import couponRoutes, { adminCouponRouter } from "./routes/couponRoutes.js";
 import paymentRoutes from "./routes/paymentRoutes.js";
 import orderRoutes, { adminOrderRouter } from "./routes/orderRoutes.js";
 import locationRoutes from "./routes/locationRoutes.js";
-import adminRoutes from "./routes/adminRoutes.js";
+import adminRoutes, { adminReviewRouter } from "./routes/adminRoutes.js";
 import chatRoutes from "./routes/chatRoutes.js";
 
 const app = express();
@@ -57,6 +59,17 @@ app.use(
   })
 );
 
+// ---- Razorpay webhook: MUST be mounted before express.json() below.
+// The signature is computed over the exact raw request bytes, and once
+// express.json() parses a body, those original bytes are gone — a route
+// registered here, ahead of the global JSON parser, is the only way to get
+// the raw Buffer this specific route needs while every other route still
+// gets normal parsed JSON. It also never reaches the CSRF/rate-limit
+// middleware below, since it's registered earlier and already sends its own
+// response — correct, since Razorpay's server has no session cookie to
+// protect and is authenticated by its own signature instead.
+app.post("/api/payment/webhook", express.raw({ type: "application/json" }), handleRazorpayWebhook);
+
 // ---- Body Parsers ----
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
@@ -68,14 +81,16 @@ app.use(cookieParser());
 // Must run after body parsers because the firewall
 // sanitizes request body/query/params.
 applyFirewall(app);
+app.use(issueCsrfToken);
 
 // ---- Logging ----
 if (process.env.NODE_ENV !== "production") {
   app.use(morgan("dev"));
 }
 
-// ---- API Rate Limiting ----
+// ---- API Rate Limiting + CSRF ----
 app.use("/api", generalApiLimiter);
+app.use("/api", verifyCsrfToken);
 
 // ---- Routes ----
 app.use("/api/auth", authRoutes);
@@ -93,6 +108,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/admin/products", adminProductRouter);
 app.use("/api/admin/coupons", adminCouponRouter);
 app.use("/api/admin/orders", adminOrderRouter);
+app.use("/api/admin/reviews", adminReviewRouter);
 
 // ---- Health / Root ----
 app.get("/", (req, res) => {

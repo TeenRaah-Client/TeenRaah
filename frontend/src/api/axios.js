@@ -51,6 +51,32 @@ const attachAdminKey = (config) => {
 };
 
 /**
+ * Reads the CSRF token cookie the backend issues on every response
+ * (see backend/middleware/csrf.js). Not httpOnly, so it's readable here —
+ * that's the point of the double-submit pattern: a cross-origin attacker
+ * can't read it to forge a matching header even though the cookie itself
+ * gets attached automatically.
+ */
+export const getCsrfCookie = () => {
+  const match = document.cookie.match(/(?:^|;\s*)tr_csrf=([^;]+)/);
+  return match ? match[1] : null;
+};
+
+const SAFE_METHODS = new Set(["get", "head", "options"]);
+
+const attachCsrfToken = (config) => {
+  const method = (config.method || "get").toLowerCase();
+  if (SAFE_METHODS.has(method)) return config;
+
+  const token = getCsrfCookie();
+  if (token) {
+    config.headers = config.headers || {};
+    config.headers["x-csrf-token"] = token;
+  }
+  return config;
+};
+
+/**
  * Convert Axios errors into the application's consistent error format.
  */
 const unwrapError = (error) => {
@@ -89,15 +115,16 @@ export const apiMultipart = axios.create({
 });
 
 /**
- * Automatically attach x-admin-key to every /admin/ request.
+ * Automatically attach x-admin-key to every /admin/ request, and the CSRF
+ * token to every mutating request.
  */
 api.interceptors.request.use(
-  attachAdminKey,
+  (config) => attachCsrfToken(attachAdminKey(config)),
   (error) => Promise.reject(error)
 );
 
 apiMultipart.interceptors.request.use(
-  attachAdminKey,
+  (config) => attachCsrfToken(attachAdminKey(config)),
   (error) => Promise.reject(error)
 );
 

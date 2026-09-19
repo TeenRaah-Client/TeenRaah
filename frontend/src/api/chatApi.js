@@ -1,4 +1,4 @@
-import api from "./axios";
+import api, { getCsrfCookie } from "./axios";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
@@ -20,7 +20,10 @@ export const streamChatMessage = async (messages, { onDelta, onAttachments, onDo
   try {
     response = await fetch(`${API_BASE_URL}/chat/stream`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": getCsrfCookie() || "",
+      },
       credentials: "include",
       body: JSON.stringify({ messages }),
       signal,

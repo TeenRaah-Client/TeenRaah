@@ -3,6 +3,7 @@ import Product from "../models/Product.js";
 import { ok, fail } from "../utils/apiResponse.js";
 import { cacheGet, cacheSet, cacheDeleteByPrefix } from "../config/redis.js";
 import cloudinary, { uploadBufferToCloudinary, deleteFromCloudinary, buildAiStudioUrl } from "../config/cloudinary.js";
+import { recordAuditLog } from "../utils/auditLog.js";
 
 const LIST_CACHE_PREFIX = "products:list:";
 const DETAIL_CACHE_PREFIX = "products:detail:";
@@ -152,6 +153,13 @@ export const createProduct = asyncHandler(async (req, res) => {
   });
 
   await cacheDeleteByPrefix(LIST_CACHE_PREFIX);
+  await recordAuditLog({
+    req,
+    action: "product.create",
+    targetType: "Product",
+    targetId: product._id,
+    summary: `Created product "${product.name}" (₹${product.price})`,
+  });
   return ok(res, { product }, "Product created", 201);
 });
 
@@ -203,6 +211,13 @@ export const updateProduct = asyncHandler(async (req, res) => {
   await product.save();
   await cacheDeleteByPrefix(LIST_CACHE_PREFIX);
   await cacheDeleteByPrefix(`${DETAIL_CACHE_PREFIX}${product.slug}`);
+  await recordAuditLog({
+    req,
+    action: "product.update",
+    targetType: "Product",
+    targetId: product._id,
+    summary: `Updated product "${product.name}"`,
+  });
   return ok(res, { product }, "Product updated");
 });
 
@@ -237,6 +252,13 @@ export const deleteProduct = asyncHandler(async (req, res) => {
   await product.deleteOne();
   await cacheDeleteByPrefix(LIST_CACHE_PREFIX);
   await cacheDeleteByPrefix(`${DETAIL_CACHE_PREFIX}${product.slug}`);
+  await recordAuditLog({
+    req,
+    action: "product.delete",
+    targetType: "Product",
+    targetId: product._id,
+    summary: `Deleted product "${product.name}"`,
+  });
   return ok(res, {}, "Product deleted");
 });
 

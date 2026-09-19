@@ -75,6 +75,11 @@ const orderSchema = new mongoose.Schema(
     },
 
     status: { type: String, enum: ORDER_STATUSES, default: "Placed", index: true },
+    // Set when the atomic stock decrement failed after payment already
+    // succeeded (two customers bought the last unit at the same moment) —
+    // surfaced to admin so it can be resolved manually (refund or restock),
+    // see orderController.js.
+    hasStockIssue: { type: Boolean, default: false },
     trackingHistory: { type: [trackingEventSchema], default: () => [{ status: "Placed" }] },
 
     estimatedDelivery: { type: Date },

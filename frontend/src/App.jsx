@@ -22,6 +22,10 @@ import OrderTracking from "./pages/OrderTracking";
 import Addresses from "./pages/Addresses";
 import Referral from "./pages/Referral";
 import Profile from "./pages/Profile";
+import Wishlist from "./pages/Wishlist";
+import Privacy from "./pages/Privacy";
+import Terms from "./pages/Terms";
+import ShippingReturns from "./pages/ShippingReturns";
 import NotFound from "./pages/NotFound";
 
 import AdminLogin from "./pages/admin/AdminLogin";
@@ -30,6 +34,9 @@ import AdminProducts from "./pages/admin/AdminProducts";
 import AdminOrders from "./pages/admin/AdminOrders";
 import AdminCoupons from "./pages/admin/AdminCoupons";
 import AdminCustomers from "./pages/admin/AdminCustomers";
+import AdminReviews from "./pages/admin/AdminReviews";
+import AdminAuditLog from "./pages/admin/AdminAuditLog";
+import AdminSettings from "./pages/admin/AdminSettings";
 import AdminLayout from "./components/admin/AdminLayout";
 
 // The client hasn't settled on a final domain/name yet, so the admin panel's
@@ -83,6 +90,9 @@ function App() {
               <Route path="orders" element={<AdminOrders />} />
               <Route path="coupons" element={<AdminCoupons />} />
               <Route path="customers" element={<AdminCustomers />} />
+              <Route path="reviews" element={<AdminReviews />} />
+              <Route path="audit-log" element={<AdminAuditLog />} />
+              <Route path="settings" element={<AdminSettings />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>
@@ -95,6 +105,9 @@ function App() {
             <Route path="/login" element={<StorefrontLayout><PageTransition><Login /></PageTransition></StorefrontLayout>} />
             <Route path="/register" element={<StorefrontLayout><PageTransition><Register /></PageTransition></StorefrontLayout>} />
             <Route path="/verify-otp" element={<StorefrontLayout><PageTransition><VerifyOtp /></PageTransition></StorefrontLayout>} />
+            <Route path="/privacy" element={<StorefrontLayout><PageTransition><Privacy /></PageTransition></StorefrontLayout>} />
+            <Route path="/terms" element={<StorefrontLayout><PageTransition><Terms /></PageTransition></StorefrontLayout>} />
+            <Route path="/shipping-returns" element={<StorefrontLayout><PageTransition><ShippingReturns /></PageTransition></StorefrontLayout>} />
 
             <Route
               path="/checkout"
@@ -142,6 +155,16 @@ function App() {
                 <StorefrontLayout>
                   <PageTransition>
                     <ProtectedRoute><Referral /></ProtectedRoute>
+                  </PageTransition>
+                </StorefrontLayout>
+              }
+            />
+            <Route
+              path="/wishlist"
+              element={
+                <StorefrontLayout>
+                  <PageTransition>
+                    <ProtectedRoute><Wishlist /></ProtectedRoute>
                   </PageTransition>
                 </StorefrontLayout>
               }

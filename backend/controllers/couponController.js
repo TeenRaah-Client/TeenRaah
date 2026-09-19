@@ -1,6 +1,7 @@
 import asyncHandler from "express-async-handler";
 import Coupon from "../models/Coupon.js";
 import { ok, fail } from "../utils/apiResponse.js";
+import { recordAuditLog } from "../utils/auditLog.js";
 
 const calcDiscount = (coupon, subtotal) => {
   let discount =
@@ -79,6 +80,7 @@ export const createCoupon = asyncHandler(async (req, res) => {
     createdBy: req.user._id,
   });
 
+  await recordAuditLog({ req, action: "coupon.create", targetType: "Coupon", targetId: coupon._id, summary: `Created coupon ${coupon.code}` });
   return ok(res, { coupon }, "Coupon created", 201);
 });
 
@@ -93,6 +95,7 @@ export const updateCoupon = asyncHandler(async (req, res) => {
   });
 
   await coupon.save();
+  await recordAuditLog({ req, action: "coupon.update", targetType: "Coupon", targetId: coupon._id, summary: `Updated coupon ${coupon.code}` });
   return ok(res, { coupon }, "Coupon updated");
 });
 
@@ -101,5 +104,6 @@ export const deleteCoupon = asyncHandler(async (req, res) => {
   const coupon = await Coupon.findById(req.params.id);
   if (!coupon) return fail(res, "Coupon not found", 404);
   await coupon.deleteOne();
+  await recordAuditLog({ req, action: "coupon.delete", targetType: "Coupon", targetId: coupon._id, summary: `Deleted coupon ${coupon.code}` });
   return ok(res, {}, "Coupon deleted");
 });

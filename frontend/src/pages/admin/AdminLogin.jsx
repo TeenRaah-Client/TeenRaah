@@ -1,26 +1,46 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
-import { Lock, Mail, ShieldAlert } from "lucide-react";
+import { Lock, Mail, ShieldAlert, KeyRound } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import Button from "../../components/ui/Button";
 
 const AdminLogin = ({ adminPath }) => {
-  const { adminLogin } = useAuth();
+  const { adminLogin, verifyAdminTotpLogin } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
+  const [pendingToken, setPendingToken] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e) => {
+  const handlePasswordSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
       await adminLogin({ email, password });
       navigate(adminPath, { replace: true });
     } catch (err) {
+      if (err.requiresTotp) {
+        setPendingToken(err.pendingToken);
+        toast("Enter your authenticator code", { icon: "🔐" });
+        return;
+      }
       toast.error(err.message || "Invalid credentials");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleTotpSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      await verifyAdminTotpLogin({ pendingToken, code });
+      navigate(adminPath, { replace: true });
+    } catch (err) {
+      toast.error(err.message || "Incorrect code");
     } finally {
       setLoading(false);
     }
@@ -42,34 +62,79 @@ const AdminLogin = ({ adminPath }) => {
           <p className="text-white/50 text-xs mt-1">Restricted — authorized personnel only</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="relative">
-            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
-            <input
-              required
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="Admin email"
-              className="w-full pl-11 pr-4 py-3.5 rounded-xl bg-white/5 border border-white/15 text-sm text-white placeholder:text-white/40 outline-none focus:border-amber-400"
-            />
-          </div>
-          <div className="relative">
-            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
-            <input
-              required
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Password"
-              className="w-full pl-11 pr-4 py-3.5 rounded-xl bg-white/5 border border-white/15 text-sm text-white placeholder:text-white/40 outline-none focus:border-amber-400"
-            />
-          </div>
+        <AnimatePresence mode="wait">
+          {!pendingToken ? (
+            <motion.form
+              key="password"
+              initial={{ opacity: 0, x: -12 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 12 }}
+              onSubmit={handlePasswordSubmit}
+              className="space-y-4"
+            >
+              <div className="relative">
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+                <input
+                  required
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Admin email"
+                  className="w-full pl-11 pr-4 py-3.5 rounded-xl bg-white/5 border border-white/15 text-sm text-white placeholder:text-white/40 outline-none focus:border-amber-400"
+                />
+              </div>
+              <div className="relative">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+                <input
+                  required
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Password"
+                  className="w-full pl-11 pr-4 py-3.5 rounded-xl bg-white/5 border border-white/15 text-sm text-white placeholder:text-white/40 outline-none focus:border-amber-400"
+                />
+              </div>
 
-          <Button type="submit" variant="amber" size="lg" className="w-full" loading={loading}>
-            Enter Control Panel
-          </Button>
-        </form>
+              <Button type="submit" variant="amber" size="lg" className="w-full" loading={loading}>
+                Continue
+              </Button>
+            </motion.form>
+          ) : (
+            <motion.form
+              key="totp"
+              initial={{ opacity: 0, x: 12 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -12 }}
+              onSubmit={handleTotpSubmit}
+              className="space-y-4"
+            >
+              <p className="text-xs text-white/50 text-center mb-2">Enter the 6-digit code from your authenticator app</p>
+              <div className="relative">
+                <KeyRound className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+                <input
+                  required
+                  autoFocus
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder="000000"
+                  className="w-full pl-11 pr-4 py-3.5 rounded-xl bg-white/5 border border-white/15 text-sm text-white placeholder:text-white/40 outline-none focus:border-amber-400 tracking-[0.3em]"
+                />
+              </div>
+              <Button type="submit" variant="amber" size="lg" className="w-full" loading={loading}>
+                Verify & Enter
+              </Button>
+              <button
+                type="button"
+                onClick={() => { setPendingToken(null); setCode(""); }}
+                className="w-full text-center text-xs text-white/50 hover:text-white/80"
+              >
+                ← Back
+              </button>
+            </motion.form>
+          )}
+        </AnimatePresence>
       </motion.div>
     </div>
   );

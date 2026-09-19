@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, User, ShoppingBag, Menu, X, MapPin, PackageSearch } from "lucide-react";
+import { Search, User, ShoppingBag, Heart, Menu, X, MapPin, PackageSearch } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useCart } from "../../context/CartContext";
 
@@ -91,6 +91,10 @@ const Navbar = () => {
 
               <Link to="/orders" className="hidden sm:flex p-2.5 hover:bg-ink/5 rounded-full transition-colors" aria-label="Track order">
                 <PackageSearch className="w-5 h-5" />
+              </Link>
+
+              <Link to="/wishlist" className="hidden sm:flex p-2.5 hover:bg-ink/5 rounded-full transition-colors" aria-label="Wishlist">
+                <Heart className="w-5 h-5" />
               </Link>
 
               <Link

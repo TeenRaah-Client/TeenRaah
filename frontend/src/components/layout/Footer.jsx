@@ -55,6 +55,7 @@ const Footer = () => {
             <h4 className="text-white font-semibold text-sm mb-4 tracking-widest2 uppercase">Account</h4>
             <ul className="space-y-2.5 text-sm">
               <li><Link to="/orders" className="hover:text-white transition-colors">Track Order</Link></li>
+              <li><Link to="/wishlist" className="hover:text-white transition-colors">Wishlist</Link></li>
               <li><Link to="/addresses" className="hover:text-white transition-colors">My Addresses</Link></li>
               <li><Link to="/referral" className="hover:text-white transition-colors">Refer &amp; Earn</Link></li>
               <li><Link to="/profile" className="hover:text-white transition-colors">Profile</Link></li>
@@ -82,9 +83,9 @@ const Footer = () => {
         <div className="border-t border-white/10 pt-6 flex flex-col sm:flex-row justify-between items-center gap-3 text-xs text-white/50">
           <span>© {new Date().getFullYear()} TeenRaah. All rights reserved.</span>
           <div className="flex gap-5">
-            <a href="#" className="hover:text-white/80">Privacy Policy</a>
-            <a href="#" className="hover:text-white/80">Terms</a>
-            <a href="#" className="hover:text-white/80">Contact</a>
+            <Link to="/privacy" className="hover:text-white/80">Privacy Policy</Link>
+            <Link to="/terms" className="hover:text-white/80">Terms</Link>
+            <Link to="/shipping-returns" className="hover:text-white/80">Shipping &amp; Returns</Link>
           </div>
         </div>
       </div>

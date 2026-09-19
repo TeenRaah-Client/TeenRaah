@@ -1,8 +1,11 @@
 import { motion } from "framer-motion";
 import { Link, useNavigate } from "react-router-dom";
-import { Star, Plus, Clock } from "lucide-react";
+import { Star, Plus, Clock, Heart } from "lucide-react";
 import { useCart } from "../../context/CartContext";
+import { useAuth } from "../../context/AuthContext";
 import { useState, useEffect } from "react";
+import api from "../../api/axios";
+import toast from "react-hot-toast";
 
 const useCountdown = (target) => {
   const [remaining, setRemaining] = useState(() => (target ? new Date(target) - new Date() : null));
@@ -20,10 +23,14 @@ const useCountdown = (target) => {
   return { d, h, m };
 };
 
-const ProductCard = ({ product }) => {
+/** props: product, isWishlisted?: known initial state (e.g. always true on the Wishlist page), onWishlistChange?: called after a successful toggle */
+const ProductCard = ({ product, isWishlisted = false, onWishlistChange }) => {
   const { addItem } = useCart();
+  const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const [adding, setAdding] = useState(false);
+  const [wishlisted, setWishlisted] = useState(isWishlisted);
+  const [wishlistBusy, setWishlistBusy] = useState(false);
   const countdown = useCountdown(product.saleEndsAt);
 
   const discountPercent = product.mrp > product.price ? Math.round(((product.mrp - product.price) / product.mrp) * 100) : 0;
@@ -38,6 +45,32 @@ const ProductCard = ({ product }) => {
       if (err?.requiresLogin) navigate("/login");
     } finally {
       setAdding(false);
+    }
+  };
+
+  const handleToggleWishlist = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isAuthenticated) {
+      navigate("/login");
+      return;
+    }
+    setWishlistBusy(true);
+    const next = !wishlisted;
+    try {
+      if (next) {
+        await api.post(`/users/wishlist/${product._id}`);
+        toast.success("Added to wishlist");
+      } else {
+        await api.delete(`/users/wishlist/${product._id}`);
+        toast.success("Removed from wishlist");
+      }
+      setWishlisted(next);
+      onWishlistChange?.();
+    } catch (err) {
+      toast.error(err.message || "Could not update wishlist");
+    } finally {
+      setWishlistBusy(false);
     }
   };
 
@@ -73,6 +106,17 @@ const ProductCard = ({ product }) => {
               </span>
             </div>
           )}
+
+          <motion.button
+            onClick={handleToggleWishlist}
+            disabled={wishlistBusy}
+            whileHover={{ scale: 1.08 }}
+            whileTap={{ scale: 0.9 }}
+            className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm rounded-full w-8 h-8 flex items-center justify-center shadow-sm disabled:opacity-60"
+            aria-label={wishlisted ? "Remove from wishlist" : "Add to wishlist"}
+          >
+            <Heart className={`w-4 h-4 transition-colors ${wishlisted ? "fill-rose text-rose" : "text-ink/60"}`} />
+          </motion.button>
 
           <motion.button
             onClick={handleQuickAdd}

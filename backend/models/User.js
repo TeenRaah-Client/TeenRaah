@@ -33,14 +33,21 @@ const userSchema = new mongoose.Schema(
       trim: true,
       match: [/^\S+@\S+\.\S+$/, "Enter a valid email"],
     },
-    password: { type: String, required: [true, "Password is required"], minlength: 6, select: false },
+    password: { type: String, required: [true, "Password is required"], minlength: 8, select: false },
     phone: { type: String, trim: true },
 
     role: { type: String, enum: ["customer", "admin"], default: "customer" },
 
+    // Admin 2FA (TOTP) — opt-in, only meaningful for role: "admin". Kept out
+    // of default query results the same way password is.
+    totpSecret: { type: String, select: false },
+    totpEnabled: { type: Boolean, default: false },
+
     isVerified: { type: Boolean, default: false },
 
     addresses: [addressSchema],
+
+    wishlist: [{ type: mongoose.Schema.Types.ObjectId, ref: "Product" }],
 
     // ---- Referral / growth loop ----
     referralCode: { type: String, unique: true, sparse: true, uppercase: true },
@@ -67,6 +74,7 @@ userSchema.methods.comparePassword = async function (candidate) {
 userSchema.methods.toSafeObject = function () {
   const obj = this.toObject();
   delete obj.password;
+  delete obj.totpSecret;
   return obj;
 };
 

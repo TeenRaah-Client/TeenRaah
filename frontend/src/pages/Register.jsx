@@ -78,11 +78,11 @@ const Register = () => {
           <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-stone" />
           <input
             required
-            minLength={6}
+            minLength={8}
             type={showPassword ? "text" : "password"}
             value={form.password}
             onChange={update("password")}
-            placeholder="Password (min. 6 characters)"
+            placeholder="Password (8+ characters, a letter & a number)"
             className="w-full pl-11 pr-11 py-3.5 rounded-xl border border-ink/15 text-sm outline-none focus:border-trail-500"
           />
           <button

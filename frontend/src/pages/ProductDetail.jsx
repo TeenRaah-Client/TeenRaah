@@ -6,6 +6,8 @@ import api from "../api/axios";
 import { useCart } from "../context/CartContext";
 import Button from "../components/ui/Button";
 import { PageLoader } from "../components/ui/Loader";
+import ProductReviews from "../components/product/ProductReviews";
+import RelatedProducts from "../components/product/RelatedProducts";
 import NotFound from "./NotFound";
 
 const ProductDetail = () => {
@@ -59,6 +61,7 @@ const ProductDetail = () => {
   };
 
   return (
+    <div>
     <div className="max-w-7xl mx-auto px-4 md:px-6 py-8 md:py-14">
       <div className="grid md:grid-cols-2 gap-10 md:gap-16">
         {/* Gallery */}
@@ -199,6 +202,10 @@ const ProductDetail = () => {
           </div>
         </div>
       </div>
+    </div>
+
+    <ProductReviews slug={product.slug} />
+    <RelatedProducts category={product.category} excludeSlug={product.slug} />
     </div>
   );
 };

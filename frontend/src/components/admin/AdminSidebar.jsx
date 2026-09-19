@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Package, ClipboardList, Tag, Users, LogOut } from "lucide-react";
+import { LayoutDashboard, Package, ClipboardList, Tag, Users, Star, ScrollText, Settings, LogOut } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 
 const AdminSidebar = ({ adminPath }) => {
@@ -12,6 +12,9 @@ const AdminSidebar = ({ adminPath }) => {
     { to: `${adminPath}/orders`, icon: ClipboardList, label: "Orders" },
     { to: `${adminPath}/coupons`, icon: Tag, label: "Coupons" },
     { to: `${adminPath}/customers`, icon: Users, label: "Customers" },
+    { to: `${adminPath}/reviews`, icon: Star, label: "Reviews" },
+    { to: `${adminPath}/audit-log`, icon: ScrollText, label: "Audit Log" },
+    { to: `${adminPath}/settings`, icon: Settings, label: "Settings" },
   ];
 
   const handleLogout = async () => {

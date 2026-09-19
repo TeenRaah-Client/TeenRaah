@@ -10,26 +10,50 @@ import { clearCartForUser } from "./cartController.js";
 import { emitOrderUpdate, emitNewOrderToAdmin } from "../sockets/index.js";
 import { sendOrderStatusEmail } from "../utils/sendEmail.js";
 import { REFERRAL_REFERRER_REWARD, REFERRAL_NEW_USER_BONUS } from "../utils/constants.js";
+import { recordAuditLog } from "../utils/auditLog.js";
 
-// Mounted as the second handler on POST /api/payment/verify, right after
-// verifyPaymentSignature confirms the Razorpay signature is genuine.
-export const finalizeOrderFromPayment = asyncHandler(async (req, res) => {
-  const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.paymentVerified;
-
-  const intent = await consumePaymentIntent(razorpay_order_id);
+// Core order-finalization logic, usable both from the browser-driven
+// /api/payment/verify flow AND from the Razorpay webhook (webhookController.js)
+// — the webhook has no req.user, so userId always comes from the stored
+// payment intent itself, never from a request session.
+//
+// Returns { order, alreadyFinalized: false } on success, or
+// { order: null, alreadyFinalized: true } if this payment was already
+// finalized by the other path (the intent is gone from Redis either way —
+// exactly once, whichever route gets there first).
+export const finalizeOrderCore = async ({ razorpayOrderId, razorpayPaymentId, razorpaySignature }) => {
+  const intent = await consumePaymentIntent(razorpayOrderId);
   if (!intent) {
-    return fail(res, "This payment session expired. If money was deducted, contact support with your payment ID.", 400);
-  }
-  if (intent.userId !== req.user._id.toString()) {
-    return fail(res, "Order session mismatch", 400);
+    return { order: null, alreadyFinalized: true };
   }
 
   const estimatedDelivery = new Date();
   estimatedDelivery.setDate(estimatedDelivery.getDate() + 5);
 
+  // Atomic, conditional decrement — the $gte guard means this can never push
+  // stock negative, even if two customers pay for the last unit in the same
+  // instant. Stock was already checked (non-atomically) back when the
+  // Razorpay order was created, so a failure here means someone else bought
+  // the last one in the narrow window between then and payment completing —
+  // rare, but real under concurrent checkouts on a popular item. Since the
+  // customer has *already paid* at this point, we don't silently drop their
+  // order — we still create it, flag it, and let the admin resolve it
+  // (refund or restock) rather than pretending this is solved automatically.
+  const stockResults = await Promise.all(
+    intent.items.map((i) =>
+      Product.updateOne({ _id: i.product, stock: { $gte: i.quantity } }, { $inc: { stock: -i.quantity } })
+    )
+  );
+  const stockIssues = intent.items.filter((_, idx) => stockResults[idx].modifiedCount === 0);
+  if (stockIssues.length > 0) {
+    console.warn(
+      `⚠️  Stock oversold on paid order (payment ${razorpayPaymentId}): ${stockIssues.map((i) => i.name).join(", ")}`
+    );
+  }
+
   const order = await Order.create({
     orderNumber: generateOrderNumber(),
-    user: req.user._id,
+    user: intent.userId,
     items: intent.items,
     shippingAddress: intent.shippingAddress,
     itemsTotal: intent.itemsTotal,
@@ -40,54 +64,86 @@ export const finalizeOrderFromPayment = asyncHandler(async (req, res) => {
     totalAmount: intent.totalAmount,
     payment: {
       method: "razorpay",
-      razorpayOrderId: razorpay_order_id,
-      razorpayPaymentId: razorpay_payment_id,
-      razorpaySignature: razorpay_signature,
+      razorpayOrderId,
+      razorpayPaymentId,
+      razorpaySignature,
       status: "paid",
       paidAt: new Date(),
     },
     status: "Placed",
-    trackingHistory: [{ status: "Placed", note: "Order placed and payment confirmed" }],
+    hasStockIssue: stockIssues.length > 0,
+    trackingHistory: [
+      {
+        status: "Placed",
+        note:
+          stockIssues.length > 0
+            ? `Payment confirmed, but ${stockIssues.map((i) => i.name).join(", ")} sold out in the same moment — needs admin attention (refund or restock).`
+            : "Order placed and payment confirmed",
+      },
+    ],
     estimatedDelivery,
   });
-
-  // Decrement stock (sequential — see README for the Atlas-transaction note)
-  await Promise.all(
-    intent.items.map((i) => Product.updateOne({ _id: i.product }, { $inc: { stock: -i.quantity } }))
-  );
 
   if (intent.couponCode) {
     await Coupon.updateOne({ code: intent.couponCode }, { $inc: { usedCount: 1 } });
   }
 
-  const user = await User.findById(req.user._id);
-  if (intent.walletUsed > 0) {
-    user.walletBalance = Math.max(0, user.walletBalance - intent.walletUsed);
-  }
-
-  // First-ever paid order from someone who signed up via a referral code:
-  // reward both sides of the loop.
-  if (user.referredBy && !user.referralRewardGiven) {
-    const priorPaidOrders = await Order.countDocuments({
-      user: user._id,
-      "payment.status": "paid",
-      _id: { $ne: order._id },
-    });
-    if (priorPaidOrders === 0) {
-      await User.updateOne({ _id: user.referredBy }, { $inc: { walletBalance: REFERRAL_REFERRER_REWARD } });
-      user.walletBalance += REFERRAL_NEW_USER_BONUS;
-      user.referralRewardGiven = true;
+  const user = await User.findById(intent.userId);
+  if (user) {
+    if (intent.walletUsed > 0) {
+      user.walletBalance = Math.max(0, user.walletBalance - intent.walletUsed);
     }
+
+    // First-ever paid order from someone who signed up via a referral code:
+    // reward both sides of the loop.
+    if (user.referredBy && !user.referralRewardGiven) {
+      const priorPaidOrders = await Order.countDocuments({
+        user: user._id,
+        "payment.status": "paid",
+        _id: { $ne: order._id },
+      });
+      if (priorPaidOrders === 0) {
+        await User.updateOne({ _id: user.referredBy }, { $inc: { walletBalance: REFERRAL_REFERRER_REWARD } });
+        user.walletBalance += REFERRAL_NEW_USER_BONUS;
+        user.referralRewardGiven = true;
+      }
+    }
+    await user.save();
+    await clearCartForUser(intent.userId);
+    sendOrderStatusEmail({ to: user.email, name: user.name, orderNumber: order.orderNumber, status: "Placed" }).catch(
+      () => {}
+    );
   }
-  await user.save();
 
-  await clearCartForUser(req.user._id.toString());
-
-  emitOrderUpdate(req.user._id.toString(), order);
+  emitOrderUpdate(intent.userId, order);
   emitNewOrderToAdmin(order);
-  sendOrderStatusEmail({ to: user.email, name: user.name, orderNumber: order.orderNumber, status: "Placed" }).catch(
-    () => {}
-  );
+
+  return { order, alreadyFinalized: false };
+};
+
+// Mounted as the second handler on POST /api/payment/verify, right after
+// verifyPaymentSignature confirms the Razorpay signature is genuine.
+export const finalizeOrderFromPayment = asyncHandler(async (req, res) => {
+  const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.paymentVerified;
+
+  const { order, alreadyFinalized } = await finalizeOrderCore({
+    razorpayOrderId: razorpay_order_id,
+    razorpayPaymentId: razorpay_payment_id,
+    razorpaySignature: razorpay_signature,
+  });
+
+  if (alreadyFinalized) {
+    // Most likely the Razorpay webhook (see webhookController.js) already
+    // finalized this exact payment moments earlier — not an error, just tell
+    // the browser to go find the order it already has.
+    const existing = await Order.findOne({ "payment.razorpayOrderId": razorpay_order_id, user: req.user._id });
+    if (existing) return ok(res, { order: existing }, "Order placed successfully!", 201);
+    return fail(res, "This payment session expired. If money was deducted, contact support with your payment ID.", 400);
+  }
+
+  if (order.user.toString() !== req.user._id.toString()) {
+    return fail(res, "Order session mismatch", 400);
+  }
 
   return ok(res, { order }, "Order placed successfully!", 201);
 });
@@ -150,5 +206,12 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
     () => {}
   );
 
+  await recordAuditLog({
+    req,
+    action: "order.status_update",
+    targetType: "Order",
+    targetId: order._id,
+    summary: `Marked order ${order.orderNumber} as "${status}"`,
+  });
   return ok(res, { order }, "Order status updated");
 });

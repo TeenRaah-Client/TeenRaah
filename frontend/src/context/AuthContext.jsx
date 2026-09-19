@@ -134,6 +134,17 @@ export const AuthProvider = ({ children }) => {
       password,
     });
 
+    // Backend responds 200 with requiresTotp instead of a session when the
+    // admin has 2FA enabled — password was correct, but no session exists
+    // yet. Surfaced as a typed error so the caller can branch to the code
+    // step, the same pattern Login.jsx already uses for requiresVerification.
+    if (data?.requiresTotp) {
+      const err = new Error("Enter your authenticator code");
+      err.requiresTotp = true;
+      err.pendingToken = data.pendingToken;
+      throw err;
+    }
+
     if (!data?.user || data.user.role !== "admin") {
       setAdminKey(null);
       throw new Error("Invalid admin account");
@@ -147,6 +158,23 @@ export const AuthProvider = ({ children }) => {
     setUser(data.user);
     setAdminKey(data.adminKey);
 
+    bootstrapSocket();
+
+    return data;
+  };
+
+  /** Step 2 of admin login when 2FA is enabled — completes the session the
+   * same way adminLogin's success path does. */
+  const verifyAdminTotpLogin = async ({ pendingToken, code }) => {
+    const { data } = await api.post("/auth/admin-login/verify-totp", { pendingToken, code });
+
+    if (!data?.user || data.user.role !== "admin" || !data.adminKey) {
+      setAdminKey(null);
+      throw new Error("Verification failed");
+    }
+
+    setUser(data.user);
+    setAdminKey(data.adminKey);
     bootstrapSocket();
 
     return data;
@@ -193,6 +221,7 @@ export const AuthProvider = ({ children }) => {
         resendOtp,
         login,
         adminLogin,
+        verifyAdminTotpLogin,
         logout,
         refreshUser,
       }}

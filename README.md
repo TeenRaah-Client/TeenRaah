@@ -27,8 +27,16 @@ TeenRaah/
 | Product images & videos                          | Cloudinary, uploaded straight from the admin product form |
 | **AI Photo Studio** (background removal)          | Admin drops in a raw bag photo → background removed and recomposited on a clean white background, Amazon-style — no new signup, uses your existing Cloudinary account |
 | **TeenRaah Assistant** (chatbot)                   | Customer-facing shopping assistant, streams real-time answers, grounded in your actual product/order data via tool-calling (never invents prices or stock) — powered by OpenRouter |
-| **AI concept image generation**                    | Customers can ask the assistant to visualize a custom bag idea; generation is scoped to bags/travel gear only, gated behind login, and rate-limited (real per-call cost, no free tier) |
-| **Firewall / hardening**                           | helmet security headers, NoSQL-injection sanitization, HTTP parameter pollution protection, plus dedicated rate limits on the chat and image-generation endpoints |
+| **AI concept image generation**                    | Customers can ask the assistant to visualize a custom bag idea; generation is scoped to bags/travel gear only, gated behind login, and rate-limited — powered by Hugging Face Inference (FLUX.1-schnell) |
+| **Firewall / hardening**                           | helmet security headers, NoSQL-injection sanitization, HTTP parameter pollution protection, CSRF protection (double-submit cookie), plus dedicated rate limits on the chat and image-generation endpoints |
+| **Request validation**                             | express-validator on every write endpoint that matters (auth, checkout, addresses, admin product/coupon writes) — rejects malformed input with a clear per-field message instead of a generic 500 |
+| **Stock oversell protection**                       | Atomic, conditional stock decrement at payment time — can never go negative even under concurrent checkouts on the same item; a rare conflict is flagged on the order for admin to resolve rather than silently overselling |
+| **Razorpay webhook**                                | Server-to-server safety net alongside the browser-driven payment flow — an order still gets created even if the customer's browser closes right after paying |
+| **Admin audit log**                                 | Every admin write (product/coupon/order/review changes, logins) recorded with who/what/when, viewable from the admin panel |
+| **Admin 2FA**                                       | Opt-in TOTP two-factor login for the admin panel (Google Authenticator/Authy compatible), on top of the existing password + secret-key layers |
+| **Product reviews**                                 | Star ratings + written reviews, restricted to customers with a *delivered* order for that product — no drive-by reviews; admin can hide or delete from the panel |
+| **Wishlist**                                        | Heart icon on every product card; a dedicated wishlist page |
+| **Legal pages**                                     | Privacy Policy, Terms of Service, Shipping & Returns — real starting content, not lorem ipsum (see the note in each page — still needs a legal review before launch) |
 | Payments                                        | Razorpay (test mode is free) — order created & priced server-side, signature verified before an order is ever written to the DB |
 | Order tracking like Flipkart                     | Animated status timeline + **live** updates via Socket.io (no refresh needed) |
 | Email verification                               | Resend sends a 6-digit OTP on signup; unverified accounts can't check out |
@@ -93,7 +101,7 @@ where to get each one for free:
 | `VITE_ADMIN_PATH` | Change this to something non-guessable before deploying. Don't link to it anywhere public. |
 | everything else | Already set for local development |
 
-### TeenRaah Assistant needs one key — and a cost decision
+### TeenRaah Assistant needs one key
 
 The chat widget (bottom-right on every storefront page) is a real, tool-calling shopping assistant, not a
 canned FAQ bot. It's grounded in your actual database: it calls `search_products`/`track_order` behind the
@@ -101,32 +109,57 @@ scenes rather than inventing prices, stock, or order details, and it flatly decl
 outside TeenRaah shopping.
 
 1. Get one key at [openrouter.ai/keys](https://openrouter.ai/keys) → set `OPENROUTER_API_KEY` in `backend/.env`.
-2. That's it for text chat — `OPENROUTER_MODEL` defaults to `meta-llama/llama-3.3-70b-instruct:free`, a
-   **free** model as of this build. Free-tier model availability on OpenRouter rotates fairly often though —
-   check [openrouter.ai/models](https://openrouter.ai/models) before assuming this specific one is still free
-   or even still listed, and swap the env var if it's moved on.
+2. That's it for text chat — `OPENROUTER_MODEL` defaults to `openrouter/free`, which auto-routes to whichever
+   free-tier model is currently available. Check [openrouter.ai/models](https://openrouter.ai/models) if you
+   want to pin a specific model instead.
 
-**AI concept image generation is a different story — it is not free on any current OpenRouter model.**
-Every image is billed per call (nothing charged on failure, per OpenRouter's docs). Because of that:
+**AI concept image generation runs on Hugging Face, not OpenRouter** — no OpenRouter image model has a free
+tier, so this uses Hugging Face's Inference API with `black-forest-labs/FLUX.1-schnell` instead, which does.
+Get a free token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) → set `HF_TOKEN`.
+Even on a free provider, this still isn't something to leave wide open:
 - The model itself can only *suggest* generating an image — it can never trigger one on its own. Actually
-  spending money always requires the customer to be logged in and click a real "Generate Image" button.
+  generating one always requires the customer to be logged in and click a real "Generate Image" button.
 - It's rate-limited two ways: an hourly cap (`imageGenLimiter`, resets on server restart) and a persistent
-  daily-per-user cap stored in Redis (`AI_IMAGE_DAILY_CAP_PER_USER`, default 5 — survives restarts, since
-  this is the one that actually matters for cost control).
+  daily-per-user cap stored in Redis (`AI_IMAGE_DAILY_CAP_PER_USER`, default 5 — survives restarts).
 - Every generation is wrapped in a fixed "professional product photography of a [bag/gear category]"
   template server-side, regardless of what the customer typed, plus a basic keyword filter — so this can't
   be turned into a general-purpose image generator even by a crafted request.
 
-If you'd rather launch with chat only and add image generation later, just leave `OPENROUTER_IMAGE_MODEL`
-as-is — the feature is additive and nothing else breaks without it, generation calls will simply fail
-gracefully with a "try again" message until real usage limits are tuned to the client's budget.
+If you'd rather launch with chat only, just leave `HF_TOKEN` as a placeholder — the feature is additive,
+generation calls will simply fail gracefully with a "try again" message until it's configured.
 
-### Firewall
+### Firewall, validation & fraud-resistance
 
-`helmet`, `express-mongo-sanitize`, and `hpp` are applied globally in `server.js` (see
-`backend/middleware/security.js`) — security headers, NoSQL-injection sanitization on
-`req.body`/`query`/`params`, and HTTP parameter pollution protection. This is the standard hardening layer
-for a Node API, not a network appliance; nothing here needs configuration or an account.
+- **helmet, express-mongo-sanitize, hpp** — applied globally in `server.js` (see `backend/middleware/security.js`):
+  security headers, NoSQL-injection sanitization on `req.body`/`query`/`params`, HTTP parameter pollution
+  protection. Nothing here needs configuration or an account.
+- **CSRF protection** — double-submit cookie pattern (`backend/middleware/csrf.js`): every visitor gets a
+  token cookie, the frontend echoes it back as a header on every mutating request, and the backend rejects
+  anything where they don't match. This matters specifically because auth uses a cookie-based session, which
+  browsers attach automatically even to cross-origin requests — the classic CSRF gap.
+- **Request validation** — `express-validator` chains (`backend/utils/validators.js`) on every route that
+  writes something meaningful: registration (8+ char passwords requiring a letter and a number — update
+  `backend/models/User.js`'s `minlength` too if you ever loosen this), checkout, addresses, admin
+  product/coupon writes. A bad request gets a clear "what's wrong" message instead of a raw 500 or, worse,
+  silently corrupted data.
+- **Stock oversell protection** — the actual stock decrement at payment-confirmation time is now an atomic,
+  conditional MongoDB update (`$gte` guard), not a blind decrement — it physically cannot go negative even if
+  two customers buy the last unit in the same instant. If that narrow race does happen, the order is still
+  created (the customer already paid) but flagged with `hasStockIssue: true` for admin to resolve manually —
+  see `backend/controllers/orderController.js`.
+- **Razorpay webhook** — `POST /api/payment/webhook` is an independent, server-to-server safety net alongside
+  the existing browser-driven `/api/payment/verify` flow. If a customer's browser closes right after paying
+  (before the callback fires), Razorpay still tells your server directly, and the order gets created anyway.
+  Set it up in Razorpay Dashboard → Settings → Webhooks, subscribe to `payment.captured`, and put the signing
+  secret in `RAZORPAY_WEBHOOK_SECRET` — this is a **different** secret from `RAZORPAY_KEY_SECRET`. Without it
+  configured, the app works exactly as before; this endpoint just stays inactive.
+- **Admin audit log** — every admin write (product/coupon/order/review changes, admin logins, 2FA
+  enable/disable) is recorded with who, what, and when — visible at Admin → Audit Log. Not a generic
+  "logged every request" wall of noise; each entry is a specific, readable line written at the point in the
+  code where the action actually succeeded.
+- **Admin 2FA** — opt-in TOTP two-factor login (Admin → Settings → Two-Factor Authentication), compatible
+  with Google Authenticator, Authy, or any standard authenticator app. Off by default so the very first admin
+  login isn't blocked before it's been set up; once enabled, login becomes a two-step password-then-code flow.
 
 ---
 
@@ -197,3 +230,12 @@ Netlify for the frontend (it's a static Vite build).
   OpenRouter's real API responses, since that needs your real key — the request/response shapes used here
   come straight from OpenRouter's own current docs, not memory, but model behavior itself (whether it calls
   tools sensibly, how it phrases things) is only knowable once it's running against a real key.
+- **This round's additions (CSRF, validation, webhook, 2FA, audit log, oversell fix, reviews, wishlist) were
+  verified with real end-to-end requests against the real backend** — a genuine bug got caught this way too:
+  `otplib`'s API changed significantly between major versions, and the import this was first written against
+  doesn't exist in the installed version; it's fixed and confirmed working now (see `authController.js`),
+  but it's a good example of why "should work" isn't the same as "tested." What's not fully verified:
+  the Razorpay webhook's signature check is exercised with a synthetic payload (confirmed to correctly
+  accept a valid HMAC and reject an invalid one) but not against a real webhook delivery from Razorpay's
+  servers, and the Hugging Face image generation call itself — same reasoning as the OpenRouter note above,
+  the request shape follows the SDK's own types, but no network path to huggingface.co exists in this sandbox.
