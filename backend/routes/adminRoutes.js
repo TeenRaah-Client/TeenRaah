@@ -4,6 +4,7 @@ import { getDashboardStats, getCustomers, getCustomerMapPoints } from "../contro
 import { getBusinessAnalytics } from "../controllers/analyticsController.js";
 import { getInventoryForecast } from "../controllers/inventoryForecastController.js";
 import { getCustomerIntelligence } from "../controllers/customerIntelligenceController.js";
+import { listMarketingCampaigns, createMarketingCampaign, deleteMarketingCampaign } from "../controllers/marketingCampaignController.js";
 import { getAllReviewsAdmin, setReviewVisibility, deleteReviewAdmin } from "../controllers/reviewController.js";
 import AdminLog from "../models/AdminLog.js";
 import { ok } from "../utils/apiResponse.js";
@@ -17,6 +18,9 @@ router.get("/dashboard", getDashboardStats);
 router.get("/analytics", getBusinessAnalytics);
 router.get("/inventory-forecast", getInventoryForecast);
 router.get("/customer-intelligence", getCustomerIntelligence);
+router.get("/marketing-campaigns", listMarketingCampaigns);
+router.post("/marketing-campaigns", createMarketingCampaign);
+router.delete("/marketing-campaigns/:id", deleteMarketingCampaign);
 router.get("/customers", getCustomers);
 router.get("/customers/map-points", getCustomerMapPoints);
 

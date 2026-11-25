@@ -11,6 +11,7 @@ import PageTransition from "./components/ui/PageTransition";
 
 import Home from "./pages/Home";
 import Shop from "./pages/Shop";
+import Compare from "./pages/Compare";
 import ProductDetail from "./pages/ProductDetail";
 import Cart from "./pages/Cart";
 import Checkout from "./pages/Checkout";
@@ -33,6 +34,7 @@ import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminAnalytics from "./pages/admin/AdminAnalytics";
 import AdminInventoryForecast from "./pages/admin/AdminInventoryForecast";
 import AdminCustomerIntelligence from "./pages/admin/AdminCustomerIntelligence";
+import AdminMarketingCampaigns from "./pages/admin/AdminMarketingCampaigns";
 import AdminProducts from "./pages/admin/AdminProducts";
 import AdminOrders from "./pages/admin/AdminOrders";
 import AdminCoupons from "./pages/admin/AdminCoupons";
@@ -92,6 +94,7 @@ function App() {
               <Route path="analytics" element={<AdminAnalytics />} />
               <Route path="inventory-forecast" element={<AdminInventoryForecast />} />
               <Route path="customer-intelligence" element={<AdminCustomerIntelligence />} />
+              <Route path="marketing" element={<AdminMarketingCampaigns />} />
               <Route path="products" element={<AdminProducts />} />
               <Route path="orders" element={<AdminOrders />} />
               <Route path="coupons" element={<AdminCoupons />} />
@@ -106,6 +109,7 @@ function App() {
           <Routes location={location} key={location.pathname}>
             <Route path="/" element={<StorefrontLayout><PageTransition><Home /></PageTransition></StorefrontLayout>} />
             <Route path="/shop" element={<StorefrontLayout><PageTransition><Shop /></PageTransition></StorefrontLayout>} />
+            <Route path="/compare" element={<StorefrontLayout><PageTransition><Compare /></PageTransition></StorefrontLayout>} />
             <Route path="/product/:slug" element={<StorefrontLayout><PageTransition><ProductDetail /></PageTransition></StorefrontLayout>} />
             <Route path="/cart" element={<StorefrontLayout><PageTransition><Cart /></PageTransition></StorefrontLayout>} />
             <Route path="/login" element={<StorefrontLayout><PageTransition><Login /></PageTransition></StorefrontLayout>} />

@@ -17,12 +17,14 @@ import {
   promoteImageToAiVersion,
 } from "../controllers/productController.js";
 import { getProductReviews, getReviewEligibility, submitReview, deleteMyReview } from "../controllers/reviewController.js";
+import { getProductRecommendations } from "../controllers/recommendationController.js";
 
 const router = express.Router();
 
 // ---- Public ----
 router.get("/", getProducts);
 router.get("/categories", getCategories);
+router.get("/recommendations", attachUserIfPresent, getProductRecommendations);
 router.get("/:slug", getProductBySlug);
 
 router.get("/:slug/reviews", getProductReviews);

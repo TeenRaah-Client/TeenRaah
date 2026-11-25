@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Star, Minus, Plus, ShieldCheck, Truck, RotateCcw } from "lucide-react";
+import { Star, Minus, Plus, ShieldCheck, Truck, RotateCcw, ArrowLeftRight } from "lucide-react";
 import api from "../api/axios";
 import { useCart } from "../context/CartContext";
 import Button from "../components/ui/Button";
@@ -9,6 +9,8 @@ import { PageLoader } from "../components/ui/Loader";
 import ProductReviews from "../components/product/ProductReviews";
 import RelatedProducts from "../components/product/RelatedProducts";
 import NotFound from "./NotFound";
+import toast from "react-hot-toast";
+import { addCompareProduct, readCompareList, writeCompareList, COMPARE_EVENT } from "../utils/compareList";
 
 const ProductDetail = () => {
   const { slug } = useParams();
@@ -48,6 +50,16 @@ const ProductDetail = () => {
 
   const media = [...product.images.map((m) => ({ ...m, type: "image" })), ...product.videos.map((m) => ({ ...m, type: "video" }))];
   const discountPercent = product.mrp > product.price ? Math.round(((product.mrp - product.price) / product.mrp) * 100) : 0;
+
+  const handleCompare = () => {
+    const result = addCompareProduct(readCompareList(window.localStorage), product);
+    if (result.error === "duplicate") return toast("Already in your comparison");
+    if (result.error === "limit") return toast.error("Compare up to 4 products at a time");
+    if (result.error) return toast.error("This product cannot be compared");
+    writeCompareList(window.localStorage, result.list);
+    window.dispatchEvent(new Event(COMPARE_EVENT));
+    toast.success("Added to compare");
+  };
 
   const handleAddToCart = async () => {
     setAdding(true);
@@ -117,6 +129,9 @@ const ProductDetail = () => {
         {/* Info */}
         <div>
           <p className="text-xs font-bold tracking-widest2 uppercase text-trail-600 mb-2">{product.category}</p>
+          <button onClick={handleCompare} className="mb-3 inline-flex items-center gap-2 rounded-full border border-ink/15 px-3 py-1.5 text-xs font-semibold text-ink/75 transition-colors hover:border-ink/40 hover:bg-white">
+            <ArrowLeftRight className="h-3.5 w-3.5" /> Compare this bag
+          </button>
           <h1 className="font-display text-4xl md:text-5xl tracking-wide mb-3">{product.name}</h1>
 
           <div className="flex items-center gap-2 mb-5">

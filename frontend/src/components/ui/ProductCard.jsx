@@ -1,11 +1,12 @@
 import { motion } from "framer-motion";
 import { Link, useNavigate } from "react-router-dom";
-import { Star, Plus, Clock, Heart } from "lucide-react";
+import { Star, Plus, Clock, Heart, ArrowLeftRight } from "lucide-react";
 import { useCart } from "../../context/CartContext";
 import { useAuth } from "../../context/AuthContext";
 import { useState, useEffect } from "react";
 import api from "../../api/axios";
 import toast from "react-hot-toast";
+import { addCompareProduct, readCompareList, writeCompareList, COMPARE_EVENT } from "../../utils/compareList";
 
 const useCountdown = (target) => {
   const [remaining, setRemaining] = useState(() => (target ? new Date(target) - new Date() : null));
@@ -46,6 +47,28 @@ const ProductCard = ({ product, isWishlisted = false, onWishlistChange }) => {
     } finally {
       setAdding(false);
     }
+  };
+
+  const handleCompare = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const current = readCompareList(window.localStorage);
+    const result = addCompareProduct(current, product);
+    if (result.error === "duplicate") {
+      toast("Already in your comparison");
+      return;
+    }
+    if (result.error === "limit") {
+      toast.error("Compare up to 4 products at a time");
+      return;
+    }
+    if (result.error) {
+      toast.error("This product cannot be compared");
+      return;
+    }
+    writeCompareList(window.localStorage, result.list);
+    window.dispatchEvent(new Event(COMPARE_EVENT));
+    toast.success("Added to compare");
   };
 
   const handleToggleWishlist = async (e) => {
@@ -116,6 +139,17 @@ const ProductCard = ({ product, isWishlisted = false, onWishlistChange }) => {
             aria-label={wishlisted ? "Remove from wishlist" : "Add to wishlist"}
           >
             <Heart className={`w-4 h-4 transition-colors ${wishlisted ? "fill-rose text-rose" : "text-ink/60"}`} />
+          </motion.button>
+
+          <motion.button
+            onClick={handleCompare}
+            whileHover={{ scale: 1.08 }}
+            whileTap={{ scale: 0.9 }}
+            className="absolute top-3 right-14 bg-white/90 backdrop-blur-sm rounded-full w-8 h-8 flex items-center justify-center shadow-sm"
+            aria-label={`Compare ${product.name}`}
+            title="Add to compare"
+          >
+            <ArrowLeftRight className="w-4 h-4 text-ink/70" />
           </motion.button>
 
           <motion.button

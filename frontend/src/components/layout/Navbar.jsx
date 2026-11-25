@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, User, ShoppingBag, Heart, Menu, X, MapPin, PackageSearch } from "lucide-react";
+import { Search, User, ShoppingBag, Heart, Menu, X, MapPin, PackageSearch, ArrowLeftRight } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useCart } from "../../context/CartContext";
+import { readCompareList, COMPARE_EVENT } from "../../utils/compareList";
 
 const CATEGORIES = [
   "Backpacks",
@@ -30,6 +31,17 @@ const Navbar = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [compareCount, setCompareCount] = useState(() => readCompareList(window.localStorage).length);
+
+  useEffect(() => {
+    const syncCompareCount = () => setCompareCount(readCompareList(window.localStorage).length);
+    window.addEventListener(COMPARE_EVENT, syncCompareCount);
+    window.addEventListener("storage", syncCompareCount);
+    return () => {
+      window.removeEventListener(COMPARE_EVENT, syncCompareCount);
+      window.removeEventListener("storage", syncCompareCount);
+    };
+  }, []);
 
   const submitSearch = (e) => {
     e.preventDefault();
@@ -95,6 +107,10 @@ const Navbar = () => {
 
               <Link to="/wishlist" className="hidden sm:flex p-2.5 hover:bg-ink/5 rounded-full transition-colors" aria-label="Wishlist">
                 <Heart className="w-5 h-5" />
+              </Link>
+              <Link to="/compare" className="relative hidden sm:flex p-2.5 hover:bg-ink/5 rounded-full transition-colors" aria-label={`Compare products${compareCount ? `, ${compareCount} selected` : ""}`}>
+                <ArrowLeftRight className="w-5 h-5" />
+                {compareCount > 0 && <span className="absolute -top-0.5 -right-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-trail-500 px-1 text-[10px] font-bold text-white">{compareCount}</span>}
               </Link>
 
               <Link
@@ -185,6 +201,9 @@ const Navbar = () => {
                     {cat}
                   </Link>
                 ))}
+                <Link to="/compare" onClick={() => setMobileOpen(false)} className="block py-3 text-lg font-medium">
+                  Compare Products {compareCount > 0 ? `(${compareCount})` : ""}
+                </Link>
                 <Link to="/referral" onClick={() => setMobileOpen(false)} className="block py-3 text-lg font-medium text-trail-600">
                   Refer & Earn
                 </Link>
