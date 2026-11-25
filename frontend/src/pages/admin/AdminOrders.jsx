@@ -26,11 +26,14 @@ const AdminOrders = () => {
   const [statusFilter, setStatusFilter] = useState("");
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [updating, setUpdating] = useState(false);
+  const [viewReturns, setViewReturns] = useState(false);
 
   const fetchOrders = async () => {
     setLoading(true);
     try {
-      const { data } = await api.get("/admin/orders", { params: { status: statusFilter || undefined, limit: 50 } });
+      const { data } = viewReturns
+        ? await api.get("/admin/orders/returns", { params: { status: "requested" } })
+        : await api.get("/admin/orders", { params: { status: statusFilter || undefined, limit: 50 } });
       setOrders(data.orders);
     } finally {
       setLoading(false);
@@ -39,7 +42,7 @@ const AdminOrders = () => {
 
   useEffect(() => {
     fetchOrders();
-  }, [statusFilter]);
+  }, [statusFilter, viewReturns]);
 
   useEffect(() => {
     const socket = getSocket();
@@ -48,6 +51,20 @@ const AdminOrders = () => {
     return () => socket.off("order:new", onNewOrder);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const handleReturnReview = async (orderId, action) => {
+    setUpdating(true);
+    try {
+      const { data } = await api.put(`/admin/orders/${orderId}/return`, { action });
+      toast.success(action === "approve" ? "Return approved; refund submitted" : "Return rejected");
+      setOrders((current) => current.filter((order) => order._id !== orderId));
+      setSelectedOrder(data.order);
+    } catch (err) {
+      toast.error(err.response?.data?.message || err.message || "Could not review return");
+    } finally {
+      setUpdating(false);
+    }
+  };
 
   const handleStatusUpdate = async (orderId, status) => {
     setUpdating(true);
@@ -67,14 +84,19 @@ const AdminOrders = () => {
     <div>
       <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
         <h1 className="font-display text-3xl tracking-wide">ORDERS</h1>
-        <select
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => setViewReturns((value) => !value)} className={`text-sm rounded-full px-4 py-2 border ${viewReturns ? "bg-ink text-white border-ink" : "bg-white border-ink/15"}`}>
+            {viewReturns ? "Viewing return requests" : "View return requests"}
+          </button>
+          {!viewReturns && <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
           className="text-sm border border-ink/15 rounded-full px-4 py-2 bg-white"
         >
           <option value="">All Statuses</option>
           {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
+        </select>}
+        </div>
       </div>
 
       {loading ? (
@@ -131,20 +153,36 @@ const AdminOrders = () => {
               </div>
 
               <div className="p-5 space-y-6">
-                <div>
+                {selectedOrder.returnRequest?.status && selectedOrder.returnRequest.status !== "none" && (
+                  <section className="bg-white rounded-xl p-5 border border-ink/8 space-y-2">
+                    <h3 className="font-semibold text-sm">Return & refund</h3>
+                    <p className="text-sm">Request: <span className="font-semibold capitalize">{selectedOrder.returnRequest.status}</span></p>
+                    <p className="text-xs text-stone">Reason: {selectedOrder.returnRequest.reason}</p>
+                    {selectedOrder.returnRequest.customerNote && <p className="text-xs text-stone">Customer note: {selectedOrder.returnRequest.customerNote}</p>}
+                    <p className="text-xs text-stone">Refund: {selectedOrder.returnRequest.refundStatus || "Not started"}{selectedOrder.returnRequest.refundId ? ` · ${selectedOrder.returnRequest.refundId}` : ""}</p>
+                    {selectedOrder.returnRequest.status === "requested" && (
+                      <div className="flex gap-2 pt-2">
+                        <button type="button" disabled={updating} onClick={() => handleReturnReview(selectedOrder._id, "approve")} className="rounded-full bg-ink text-white px-4 py-2 text-xs font-semibold disabled:opacity-50">Approve & refund</button>
+                        <button type="button" disabled={updating} onClick={() => handleReturnReview(selectedOrder._id, "reject")} className="rounded-full border border-ink/15 px-4 py-2 text-xs font-semibold disabled:opacity-50">Reject</button>
+                      </div>
+                    )}
+                    {selectedOrder.returnRequest.refundStatus === "unknown" && <p className="text-xs text-rose-700">Gateway result is uncertain. Reconcile this payment in Razorpay before taking further action. Do not retry the refund.</p>}
+                  </section>
+                )}
+                {!viewReturns && <div>
                   <label className="text-xs font-semibold text-stone uppercase mb-2 block">Update Status</label>
                   <div className="relative">
                     <select
                       value={selectedOrder.status}
                       onChange={(e) => handleStatusUpdate(selectedOrder._id, e.target.value)}
-                      disabled={updating}
+                      disabled={updating || ["Cancelled", "Returned"].includes(selectedOrder.status)}
                       className="w-full appearance-none px-4 py-3 rounded-xl border border-ink/15 text-sm bg-white outline-none focus:border-trail-500"
                     >
-                      {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                      {STATUSES.filter((s) => !["Cancelled", "Returned"].includes(s)).map((s) => <option key={s} value={s}>{s}</option>)}
                     </select>
                     <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-stone pointer-events-none" />
                   </div>
-                </div>
+                </div>}
 
                 <div className="bg-white rounded-xl p-5 border border-ink/8">
                   <TrackingTimeline order={selectedOrder} />

@@ -66,13 +66,14 @@ const app = express();
 | Reverse Proxy
 |--------------------------------------------------------------------------
 |
-| Render runs the application behind a reverse proxy.
-| This allows Express and express-rate-limit to correctly
-| handle X-Forwarded-For.
+| Trust the hosting proxy in production (Render/Railway).
+| Do not trust arbitrary X-Forwarded-* headers during local
+| development.
 |
 */
 
-app.set("trust proxy", 1);
+const isProduction = process.env.NODE_ENV === "production";
+app.set("trust proxy", isProduction ? 1 : false);
 
 
 /*
@@ -92,39 +93,51 @@ const PORT = process.env.PORT || 5000;
 |--------------------------------------------------------------------------
 */
 
-const allowedOrigins = (
-  process.env.ALLOWED_ORIGINS ||
-  process.env.CLIENT_URL ||
-  "http://localhost:5173"
-)
-  .split(",")
-  .map((origin) => origin.trim())
+const configuredOrigins = [
+  ...(process.env.ALLOWED_ORIGINS || "").split(","),
+  ...(process.env.CLIENT_URL || "").split(","),
+]
+  .map((origin) => origin.trim().replace(/\/$/, ""))
   .filter(Boolean);
 
+// Local origins are accepted only in development. This supports the
+// Vite default port plus common alternate/dev-preview ports without
+// weakening production CORS.
+const localDevelopmentOrigins = isProduction
+  ? []
+  : [
+      "http://localhost:5173",
+      "http://127.0.0.1:5173",
+      "http://localhost:5174",
+      "http://127.0.0.1:5174",
+      "http://localhost:4173",
+      "http://127.0.0.1:4173",
+    ];
+
+const allowedOrigins = new Set([
+  ...configuredOrigins,
+  ...localDevelopmentOrigins,
+]);
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      /*
-       * Allow requests with no origin.
-       *
-       * This is useful for server-to-server requests,
-       * health checks, etc.
-       */
-      if (!origin || allowedOrigins.includes(origin)) {
+      // Requests without an Origin header are typically server-to-server
+      // calls (e.g. health checks and payment-provider webhooks).
+      if (!origin || allowedOrigins.has(origin.replace(/\/$/, ""))) {
         return callback(null, true);
       }
 
-      return callback(
-        new Error("Not allowed by CORS")
-      );
+      return callback(new Error(`Not allowed by CORS: ${origin}`));
     },
-
-    /*
-     * Required because authentication and CSRF
-     * cookies are used.
-     */
     credentials: true,
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-CSRF-Token",
+      "X-Admin-Access-Key",
+    ],
   })
 );
 
@@ -448,6 +461,7 @@ app.get(
   (req, res) => {
     res.json({
       status: "ok",
+      environment: process.env.NODE_ENV || "development",
       time: new Date().toISOString(),
     });
   }

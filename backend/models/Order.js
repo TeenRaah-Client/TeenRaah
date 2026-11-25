@@ -80,6 +80,26 @@ const orderSchema = new mongoose.Schema(
     // surfaced to admin so it can be resolved manually (refund or restock),
     // see orderController.js.
     hasStockIssue: { type: Boolean, default: false },
+    returnRequest: {
+      status: {
+        type: String,
+        enum: ["none", "requested", "processing", "approved", "rejected"],
+        default: "none",
+      },
+      reason: { type: String, default: "" },
+      customerNote: { type: String, default: "" },
+      requestedAt: { type: Date },
+      reviewedAt: { type: Date },
+      reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      adminNote: { type: String, default: "" },
+      refundId: { type: String, default: "" },
+      refundAmount: { type: Number, default: 0 },
+      refundStatus: {
+        type: String,
+        enum: ["none", "pending", "processed", "failed", "unknown"],
+        default: "none",
+      },
+    },
     trackingHistory: { type: [trackingEventSchema], default: () => [{ status: "Placed" }] },
 
     estimatedDelivery: { type: Date },

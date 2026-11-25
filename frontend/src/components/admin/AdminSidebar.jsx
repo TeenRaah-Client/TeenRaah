@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Package, ClipboardList, Tag, Users, Star, ScrollText, Settings, LogOut } from "lucide-react";
+import { LayoutDashboard, Package, ClipboardList, Tag, Users, Star, ScrollText, Settings, LogOut, BarChart3, TrendingUp, BrainCircuit } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 
 const AdminSidebar = ({ adminPath }) => {
@@ -8,6 +8,9 @@ const AdminSidebar = ({ adminPath }) => {
 
   const links = [
     { to: adminPath, end: true, icon: LayoutDashboard, label: "Dashboard" },
+    { to: `${adminPath}/analytics`, icon: BarChart3, label: "Analytics" },
+    { to: `${adminPath}/inventory-forecast`, icon: TrendingUp, label: "Demand Forecast" },
+    { to: `${adminPath}/customer-intelligence`, icon: BrainCircuit, label: "Customer Intelligence" },
     { to: `${adminPath}/products`, icon: Package, label: "Products" },
     { to: `${adminPath}/orders`, icon: ClipboardList, label: "Orders" },
     { to: `${adminPath}/coupons`, icon: Tag, label: "Coupons" },

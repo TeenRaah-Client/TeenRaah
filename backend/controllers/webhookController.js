@@ -1,5 +1,8 @@
 import crypto from "crypto";
 import { finalizeOrderCore } from "./orderController.js";
+import Order from "../models/Order.js";
+import { markRefundProcessed } from "../utils/refundReconciliation.js";
+import { isFullOrderRefund } from "../utils/refundPolicy.js";
 
 /**
  * Why this exists alongside /api/payment/verify: that flow only completes
@@ -43,8 +46,65 @@ export const handleRazorpayWebhook = async (req, res) => {
     return res.status(400).json({ received: false });
   }
 
+  // Refund webhooks reconcile asynchronous Razorpay refund states. The
+  // order is located by the original payment ID; repeated events are safe.
+  if (payload.event === "refund.processed" || payload.event === "refund.failed") {
+    const refund = payload.payload?.refund?.entity;
+    if (refund?.payment_id) {
+      try {
+        const processed = payload.event === "refund.processed";
+        const matchingOrder = await Order.findOne({
+          "payment.razorpayPaymentId": refund.payment_id,
+          "returnRequest.status": { $in: ["processing", "approved"] },
+        }).select("totalAmount returnRequest");
+
+        if (processed) {
+          // This application currently supports full-order refunds only.
+          // Never mark an order fully refunded for a partial/foreign refund.
+          if (!matchingOrder || !isFullOrderRefund(matchingOrder.totalAmount, refund.amount)) {
+            console.warn(`Ignoring non-matching or partial refund event for payment ${refund.payment_id}`);
+            return res.status(200).json({ received: true, reconciled: false });
+          }
+          await markRefundProcessed({
+            paymentId: refund.payment_id,
+            refundId: refund.id,
+            amountPaise: Number(refund.amount),
+          });
+        } else {
+          await Order.updateOne(
+            {
+              "payment.razorpayPaymentId": refund.payment_id,
+              "returnRequest.status": { $in: ["processing", "approved"] },
+              "returnRequest.refundStatus": { $ne: "processed" },
+              ...(refund.id
+                ? { $or: [
+                    { "returnRequest.refundId": refund.id },
+                    { "returnRequest.refundId": "" },
+                    { "returnRequest.refundId": { $exists: false } },
+                  ] }
+                : {}),
+            },
+            {
+              $set: {
+                "returnRequest.refundStatus": "failed",
+                ...(refund.id ? { "returnRequest.refundId": refund.id } : {}),
+                ...(Number.isFinite(Number(refund.amount)) ? { "returnRequest.refundAmount": Number(refund.amount) / 100 } : {}),
+              },
+            }
+          );
+        }
+      } catch (err) {
+        console.error("Razorpay refund webhook reconciliation failed:", err.message);
+        // A non-2xx response lets Razorpay retry a valid event after a
+        // transient database/transaction failure.
+        return res.status(500).json({ received: false });
+      }
+    }
+    return res.status(200).json({ received: true });
+  }
+
   // Always 200 once the signature is valid, even if we don't act on this
-  // particular event — Razorpay retries on non-2xx, and there's nothing to
+  // particular event — Razorpay retries on non-2xx, and there is nothing to
   // retry for events we don't handle.
   if (payload.event !== "payment.captured") {
     return res.status(200).json({ received: true });

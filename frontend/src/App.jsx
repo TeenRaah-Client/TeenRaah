@@ -30,6 +30,9 @@ import NotFound from "./pages/NotFound";
 
 import AdminLogin from "./pages/admin/AdminLogin";
 import AdminDashboard from "./pages/admin/AdminDashboard";
+import AdminAnalytics from "./pages/admin/AdminAnalytics";
+import AdminInventoryForecast from "./pages/admin/AdminInventoryForecast";
+import AdminCustomerIntelligence from "./pages/admin/AdminCustomerIntelligence";
 import AdminProducts from "./pages/admin/AdminProducts";
 import AdminOrders from "./pages/admin/AdminOrders";
 import AdminCoupons from "./pages/admin/AdminCoupons";
@@ -86,6 +89,9 @@ function App() {
               }
             >
               <Route index element={<AdminDashboard />} />
+              <Route path="analytics" element={<AdminAnalytics />} />
+              <Route path="inventory-forecast" element={<AdminInventoryForecast />} />
+              <Route path="customer-intelligence" element={<AdminCustomerIntelligence />} />
               <Route path="products" element={<AdminProducts />} />
               <Route path="orders" element={<AdminOrders />} />
               <Route path="coupons" element={<AdminCoupons />} />

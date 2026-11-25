@@ -1,6 +1,9 @@
 import express from "express";
 import { protect, requireAdmin } from "../middleware/auth.js";
 import { getDashboardStats, getCustomers, getCustomerMapPoints } from "../controllers/adminController.js";
+import { getBusinessAnalytics } from "../controllers/analyticsController.js";
+import { getInventoryForecast } from "../controllers/inventoryForecastController.js";
+import { getCustomerIntelligence } from "../controllers/customerIntelligenceController.js";
 import { getAllReviewsAdmin, setReviewVisibility, deleteReviewAdmin } from "../controllers/reviewController.js";
 import AdminLog from "../models/AdminLog.js";
 import { ok } from "../utils/apiResponse.js";
@@ -11,6 +14,9 @@ const router = express.Router();
 router.use(protect, requireAdmin);
 
 router.get("/dashboard", getDashboardStats);
+router.get("/analytics", getBusinessAnalytics);
+router.get("/inventory-forecast", getInventoryForecast);
+router.get("/customer-intelligence", getCustomerIntelligence);
 router.get("/customers", getCustomers);
 router.get("/customers/map-points", getCustomerMapPoints);
 

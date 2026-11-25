@@ -171,6 +171,7 @@ cd backend
 npm install
 npm run seed:admin      # creates the ONE admin account, from ADMIN_EMAIL/ADMIN_PASSWORD in .env
 npm run seed:products   # optional — adds 10 demo bags so the store isn't empty
+npm test                 # runs the backend unit tests
 npm run dev              # http://localhost:5000
 
 # Frontend (separate terminal)
@@ -239,3 +240,35 @@ Netlify for the frontend (it's a static Vite build).
   accept a valid HMAC and reject an invalid one) but not against a real webhook delivery from Razorpay's
   servers, and the Hugging Face image generation call itself — same reasoning as the OpenRouter note above,
   the request shape follows the SDK's own types, but no network path to huggingface.co exists in this sandbox.
+
+
+## Order lifecycle safety
+
+Admin fulfilment updates follow an explicit state machine: Placed → Confirmed → Packed → Shipped → Out for Delivery → Delivered. Invalid, skipped, repeated, and terminal-state transitions are rejected.
+
+Cancellation and return are deliberately excluded from the generic status editor. Both affect captured funds and must use dedicated refund workflows. The return workflow is implemented below; a refund-backed cancellation workflow is not yet available, so paid orders cannot be marked cancelled through the status editor. This is intentional protection against marking an order cancelled or restoring stock without reconciling the customer's payment.
+
+
+## Returns and refunds (Phase 2)
+
+- Customers can request a return through `POST /api/orders/:id/return` with `{ "reason": "Damaged item", "note": "..." }`. Supported reasons: `Damaged item`, `Wrong item received`, `Different from description`, `Quality issue`, and `Other`.
+- The default return window is **7 days from the recorded Delivered tracking event**. Only paid, delivered orders are eligible.
+- Admins can list requests with `GET /api/admin/orders/returns` (optional `?status=requested|processing|approved|rejected`) and review with `PUT /api/admin/orders/:id/return` using `{ "action": "approve|reject", "note": "..." }`.
+- Approval submits a full-order refund to Razorpay. Refunds are not retried automatically if the gateway response is ambiguous; the request remains in `processing` with `refundStatus=unknown` for manual reconciliation in Razorpay Dashboard. This avoids accidentally issuing a second refund.
+- Razorpay webhook events `refund.processed` and `refund.failed` reconcile the stored refund state. Subscribe to these events in addition to `payment.captured`.
+- Only a full-order refund amount is accepted as completion. Partial or unrelated refund events are not allowed to mark the whole order as refunded.
+- Duplicate refund submissions are blocked by an atomic transition from `requested` to `processing`. Ambiguous gateway responses are never retried automatically.
+- Refund webhooks store the Razorpay refund ID and amount. Duplicate processed events cannot restore wallet credit more than once.
+- Returned items are **not** automatically restocked. Inspect the item and restock it through inventory operations only after it is approved for resale.
+
+Run backend tests with `npm test`. These tests cover order lifecycle and return-window eligibility; live Razorpay refunds and webhook delivery must still be verified with Razorpay test-mode credentials before production use.
+
+
+## Phase 3 — Read-only business analytics
+
+The admin panel includes a separate **Analytics** page at the configured admin path plus `/analytics`.
+It is served by `GET /api/admin/analytics?period=7d|30d|90d|365d` and uses the existing admin authentication middleware.
+
+The endpoint is read-only: it does not modify orders, payments, refunds, products, inventory, customers, or wallet balances. Reporting windows use India calendar days (Asia/Kolkata). The report includes collected order value, refunds marked `processed`, net collected value, paid order count, average order value, new customers, top-selling order items, order-status counts, and active products with stock of five units or fewer.
+
+**Accounting limitation:** net collected is a payment-collection metric, not profit. The current schema does not provide structured product cost, gateway fees, or operating expenses. Product item value is shown before refunds. Analytics aggregations have a 15-second execution limit; the low-stock query has a 5-second limit.
