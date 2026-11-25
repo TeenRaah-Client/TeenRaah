@@ -136,6 +136,7 @@ app.use(
       "Content-Type",
       "Authorization",
       "X-CSRF-Token",
+      "X-Admin-Key",
       "X-Admin-Access-Key",
     ],
   })
