@@ -5,6 +5,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 const ADMIN_KEY_STORAGE = "tr_admin_key";
 
 let adminKey = null;
+let memoryCsrfToken = null;
 
 // Restore admin key for the current browser session.
 try {
@@ -55,8 +56,10 @@ const attachAdminKey = (config) => {
 /**
  * Reads the CSRF token issued by the backend.
  *
- * The cookie is intentionally NOT httpOnly because the frontend
- * needs to read it and send it back through the x-csrf-token header.
+ * On same-site deployments, `document.cookie` can read `tr_csrf_v2` directly.
+ * On cross-domain deployments (e.g. Vercel + Render), `document.cookie` cannot
+ * read cookies from the API origin, so `ensureCsrfToken()` also caches the
+ * token returned by `GET /api/csrf-token` in memory.
  */
 export const getCsrfCookie = () => {
   const match = document.cookie.match(
@@ -65,6 +68,8 @@ export const getCsrfCookie = () => {
 
   return match ? decodeURIComponent(match[1]) : null;
 };
+
+export const getCsrfToken = () => getCsrfCookie() || memoryCsrfToken;
 
 /**
  * Safe HTTP methods do not require CSRF protection.
@@ -76,31 +81,24 @@ const SAFE_METHODS = new Set([
 ]);
 
 /**
- * Makes sure a CSRF cookie exists before a state-changing request.
- *
- * This is particularly important for:
- *
- *   POST /auth/login
- *   POST /auth/admin-login
- *   POST /users/wishlist/:productId
- *
- * because the very first request from a fresh browser session may
- * otherwise have no CSRF cookie yet.
+ * Makes sure a CSRF token exists before a state-changing request.
  */
 let csrfBootstrapPromise = null;
 
-const ensureCsrfToken = async () => {
-  // Already available.
-  if (getCsrfCookie()) {
-    return;
+export const ensureCsrfToken = async () => {
+  if (getCsrfToken()) {
+    return getCsrfToken();
   }
 
-  // Prevent multiple simultaneous requests from creating
-  // multiple bootstrap requests.
   if (!csrfBootstrapPromise) {
     csrfBootstrapPromise = axios
       .get(`${API_BASE_URL}/csrf-token`, {
         withCredentials: true,
+      })
+      .then((res) => {
+        if (res?.data?.csrfToken) {
+          memoryCsrfToken = res.data.csrfToken;
+        }
       })
       .finally(() => {
         csrfBootstrapPromise = null;
@@ -109,12 +107,14 @@ const ensureCsrfToken = async () => {
 
   await csrfBootstrapPromise;
 
-  // Verify that the backend actually issued the cookie.
-  if (!getCsrfCookie()) {
+  const token = getCsrfToken();
+  if (!token) {
     throw new Error(
       "Unable to initialize security token. Please refresh the page and try again."
     );
   }
+
+  return token;
 };
 
 /**
@@ -127,15 +127,7 @@ const attachCsrfToken = async (config) => {
     return config;
   }
 
-  await ensureCsrfToken();
-
-  const token = getCsrfCookie();
-
-  if (!token) {
-    throw new Error(
-      "Security token missing. Please refresh the page and try again."
-    );
-  }
+  const token = await ensureCsrfToken();
 
   config.headers = config.headers || {};
   config.headers["x-csrf-token"] = token;

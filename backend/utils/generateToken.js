@@ -3,11 +3,13 @@ import jwt from "jsonwebtoken";
 const COOKIE_NAME = "tr_token";
 
 const isProduction = process.env.NODE_ENV === "production";
+const cookieDomain = process.env.COOKIE_DOMAIN?.trim() || undefined;
 
 const cookieOptions = {
   httpOnly: true,
   secure: isProduction,
   sameSite: isProduction ? "none" : "lax",
+  ...(cookieDomain ? { domain: cookieDomain } : {}),
   path: "/",
   maxAge: 30 * 24 * 60 * 60 * 1000,
 };
@@ -53,6 +55,7 @@ export const clearAuthCookie = (res) => {
     httpOnly: cookieOptions.httpOnly,
     secure: cookieOptions.secure,
     sameSite: cookieOptions.sameSite,
+    ...(cookieDomain ? { domain: cookieDomain } : {}),
     path: cookieOptions.path,
   });
 };

@@ -18,6 +18,11 @@ const redisUrl =
 
 export const redis = new Redis(redisUrl, {
   maxRetriesPerRequest: 3,
+  enableReadyCheck: false,
+
+  ...(redisUrl.startsWith("rediss://")
+    ? { tls: { rejectUnauthorized: false } }
+    : {}),
 
   retryStrategy(times) {
     const delay = Math.min(times * 200, 2000);
@@ -42,7 +47,7 @@ redis.on("error", (err) => {
 
 /**
  * JSON-aware get.
- * Returns null if the key doesn't exist or isn't valid JSON.
+ * Returns null if the key doesn't exist, isn't valid JSON, or Redis is unavailable.
  */
 export const cacheGet = async (key) => {
   try {
@@ -55,14 +60,19 @@ export const cacheGet = async (key) => {
 
 /**
  * JSON-aware set with an optional TTL in seconds.
+ * Fails gracefully so cache hiccups never break API responses.
  */
 export const cacheSet = async (key, value, ttlSeconds) => {
-  const payload = JSON.stringify(value);
+  try {
+    const payload = JSON.stringify(value);
 
-  if (ttlSeconds) {
-    await redis.set(key, payload, "EX", ttlSeconds);
-  } else {
-    await redis.set(key, payload);
+    if (ttlSeconds) {
+      await redis.set(key, payload, "EX", ttlSeconds);
+    } else {
+      await redis.set(key, payload);
+    }
+  } catch (err) {
+    console.warn("🔴 Redis cacheSet failed:", err.message);
   }
 };
 
@@ -71,19 +81,23 @@ export const cacheSet = async (key, value, ttlSeconds) => {
  * Used to bust product caches on admin writes.
  */
 export const cacheDeleteByPrefix = async (prefix) => {
-  const stream = redis.scanStream({
-    match: `${prefix}*`,
-    count: 100,
-  });
+  try {
+    const stream = redis.scanStream({
+      match: `${prefix}*`,
+      count: 100,
+    });
 
-  const keys = [];
+    const keys = [];
 
-  for await (const found of stream) {
-    keys.push(...found);
-  }
+    for await (const found of stream) {
+      keys.push(...found);
+    }
 
-  if (keys.length) {
-    await redis.del(...keys);
+    if (keys.length) {
+      await redis.del(...keys);
+    }
+  } catch (err) {
+    console.warn("🔴 Redis cacheDeleteByPrefix failed:", err.message);
   }
 };
 

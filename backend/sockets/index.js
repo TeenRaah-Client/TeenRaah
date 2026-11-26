@@ -12,10 +12,41 @@ let io = null;
  *    (admin sockets join room `admin`)
  */
 export const initSocket = (httpServer) => {
-  const allowedOrigins = (process.env.ALLOWED_ORIGINS || process.env.CLIENT_URL || "*").split(",");
+  const isProduction = process.env.NODE_ENV === "production";
+
+  const configuredOrigins = [
+    ...(process.env.ALLOWED_ORIGINS || "").split(","),
+    ...(process.env.CLIENT_URL || "").split(","),
+  ]
+    .map((origin) => origin.trim().replace(/\/$/, ""))
+    .filter(Boolean);
+
+  const localDevelopmentOrigins = isProduction
+    ? []
+    : [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+        "http://localhost:4173",
+        "http://127.0.0.1:4173",
+      ];
+
+  const allowedOrigins = new Set([
+    ...configuredOrigins,
+    ...localDevelopmentOrigins,
+  ]);
 
   io = new Server(httpServer, {
-    cors: { origin: allowedOrigins, credentials: true },
+    cors: {
+      origin: (origin, callback) => {
+        if (!origin || allowedOrigins.has(origin.replace(/\/$/, ""))) {
+          return callback(null, true);
+        }
+        return callback(new Error(`Socket.IO CORS blocked: ${origin}`));
+      },
+      credentials: true,
+    },
   });
 
   io.use((socket, next) => {

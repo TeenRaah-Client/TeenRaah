@@ -298,6 +298,7 @@ app.get(
     return res.status(200).json({
       success: true,
       message: "CSRF token initialized",
+      csrfToken: req.csrfToken,
     });
   }
 );
