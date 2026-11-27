@@ -4,6 +4,7 @@ import { ok, fail } from "../utils/apiResponse.js";
 import { cacheGet, cacheSet, cacheDeleteByPrefix } from "../config/redis.js";
 import cloudinary, { uploadBufferToCloudinary, deleteFromCloudinary, buildAiStudioUrl } from "../config/cloudinary.js";
 import { recordAuditLog } from "../utils/auditLog.js";
+import { buildProductFilterQuery, buildProductSort, normalizePagination } from "../utils/productQuery.js";
 
 const LIST_CACHE_PREFIX = "products:list:";
 const DETAIL_CACHE_PREFIX = "products:detail:";
@@ -34,39 +35,22 @@ const parseAiStudioImages = (raw) => {
 };
 
 // @route  GET /api/products
-// Supports: ?category=&search=&minPrice=&maxPrice=&sort=&page=&limit=&featured=
+// Supports: ?category=&search=&minPrice=&maxPrice=&minCapacity=&maxCapacity=&color=&inStock=&tag=&sort=&page=&limit=&featured=
 export const getProducts = asyncHandler(async (req, res) => {
-  const { category, search, minPrice, maxPrice, sort, featured, page = 1, limit = 12 } = req.query;
+  const { sort, page = 1, limit = 12 } = req.query;
 
   const cacheKey = `${LIST_CACHE_PREFIX}${JSON.stringify(req.query)}`;
   const cached = await cacheGet(cacheKey);
   if (cached) return ok(res, cached);
 
-  const query = { isActive: true };
-  if (category) query.category = category;
-  if (featured === "true") query.isFeatured = true;
-  if (minPrice || maxPrice) {
-    query.price = {};
-    if (minPrice) query.price.$gte = Number(minPrice);
-    if (maxPrice) query.price.$lte = Number(maxPrice);
-  }
-  if (search) query.$text = { $search: search };
-
-  const sortMap = {
-    priceLowHigh: { price: 1 },
-    priceHighLow: { price: -1 },
-    newest: { createdAt: -1 },
-    rating: { ratingsAverage: -1 },
-  };
-  const sortBy = sortMap[sort] || { createdAt: -1 };
-
-  const pageNum = Math.max(1, Number(page));
-  const limitNum = Math.min(50, Number(limit));
+  const query = buildProductFilterQuery(req.query);
+  const sortBy = buildProductSort(sort);
+  const { page: pageNum, limit: limitNum, skip } = normalizePagination(page, limit, 50);
 
   const [products, total] = await Promise.all([
     Product.find(query)
       .sort(sortBy)
-      .skip((pageNum - 1) * limitNum)
+      .skip(skip)
       .limit(limitNum),
     Product.countDocuments(query),
   ]);
@@ -77,6 +61,32 @@ export const getProducts = asyncHandler(async (req, res) => {
   };
 
   await cacheSet(cacheKey, payload, LIST_TTL);
+  return ok(res, payload);
+});
+
+// @route  GET /api/products/suggestions?q=
+// Fast predictive search for the storefront search overlay
+export const getProductSuggestions = asyncHandler(async (req, res) => {
+  const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  if (q.length < 2) {
+    return ok(res, { products: [], categories: [] });
+  }
+
+  const cacheKey = `${LIST_CACHE_PREFIX}suggest:${q.toLowerCase()}`;
+  const cached = await cacheGet(cacheKey);
+  if (cached) return ok(res, cached);
+
+  const query = buildProductFilterQuery({ search: q });
+  const products = await Product.find(query)
+    .select("name slug category price mrp images ratingsAverage stock capacityLitres")
+    .sort({ ratingsAverage: -1, createdAt: -1 })
+    .limit(6)
+    .lean();
+
+  const categories = [...new Set(products.map((p) => p.category).filter(Boolean))];
+  const payload = { products, categories };
+
+  await cacheSet(cacheKey, payload, 60);
   return ok(res, payload);
 });
 

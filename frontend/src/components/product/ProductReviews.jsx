@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import api from "../../api/axios";
 import { useAuth } from "../../context/AuthContext";
 import Button from "../ui/Button";
+import { buildRatingBreakdown } from "../../utils/storefront";
 
 const StarPicker = ({ value, onChange }) => (
   <div className="flex gap-1">
@@ -16,7 +17,6 @@ const StarPicker = ({ value, onChange }) => (
   </div>
 );
 
-/** props: slug */
 const ProductReviews = ({ slug }) => {
   const { isAuthenticated } = useAuth();
   const [reviews, setReviews] = useState([]);
@@ -26,6 +26,7 @@ const ProductReviews = ({ slug }) => {
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [starFilter, setStarFilter] = useState(0);
 
   const fetchAll = async () => {
     setLoading(true);
@@ -34,7 +35,7 @@ const ProductReviews = ({ slug }) => {
       if (isAuthenticated) requests.push(api.get(`/products/${slug}/reviews/eligibility`));
 
       const [reviewsRes, eligibilityRes] = await Promise.all(requests);
-      setReviews(reviewsRes.data.reviews);
+      setReviews(reviewsRes.data.reviews || []);
       if (eligibilityRes) {
         setEligibility(eligibilityRes.data);
         if (eligibilityRes.data.existingReview) {
@@ -73,9 +74,12 @@ const ProductReviews = ({ slug }) => {
 
   if (loading) return null;
 
+  const breakdown = buildRatingBreakdown(reviews);
+  const filteredReviews = starFilter > 0 ? reviews.filter((r) => Math.round(r.rating) === starFilter) : reviews;
+
   return (
     <section className="max-w-7xl mx-auto px-4 md:px-6 py-14 border-t border-ink/8">
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
         <h2 className="font-display text-3xl tracking-wide">REVIEWS ({reviews.length})</h2>
         {isAuthenticated && eligibility?.canReview && !formOpen && (
           <Button variant="outline" onClick={() => setFormOpen(true)}>
@@ -85,7 +89,7 @@ const ProductReviews = ({ slug }) => {
       </div>
 
       {isAuthenticated && !eligibility?.canReview && !eligibility?.hasReviewed && eligibility?.reason && (
-        <p className="text-xs text-stone mb-8">{eligibility.reason}</p>
+        <p className="text-xs text-stone mb-6">{eligibility.reason}</p>
       )}
 
       {formOpen && (
@@ -116,11 +120,62 @@ const ProductReviews = ({ slug }) => {
         </motion.form>
       )}
 
-      {reviews.length === 0 ? (
-        <p className="text-stone text-sm">No reviews yet — be the first to share your experience.</p>
+      {reviews.length > 0 && (
+        <div className="bg-white rounded-2xl p-5 sm:p-6 shadow-card mb-8 grid md:grid-cols-3 gap-6 items-center">
+          <div className="text-center md:text-left md:border-r border-ink/8 md:pr-6">
+            <p className="font-display text-5xl tnum leading-none">{breakdown.average.toFixed(1)}</p>
+            <div className="flex justify-center md:justify-start gap-0.5 my-2">
+              {Array.from({ length: 5 }).map((_, s) => (
+                <Star
+                  key={s}
+                  className={`w-4 h-4 ${
+                    s < Math.round(breakdown.average) ? "fill-amber-400 text-amber-400" : "text-paper-dark"
+                  }`}
+                />
+              ))}
+            </div>
+            <p className="text-xs text-stone">Based on {breakdown.total} verified {breakdown.total === 1 ? "review" : "reviews"}</p>
+          </div>
+
+          <div className="md:col-span-2 space-y-2">
+            {breakdown.rows.map((row) => (
+              <button
+                type="button"
+                key={row.stars}
+                onClick={() => setStarFilter((prev) => (prev === row.stars ? 0 : row.stars))}
+                className={`w-full flex items-center gap-3 text-xs py-1 px-2 rounded-lg transition-colors ${
+                  starFilter === row.stars ? "bg-trail-50" : "hover:bg-paper"
+                }`}
+              >
+                <span className="w-10 font-semibold text-left tnum">{row.stars} ★</span>
+                <div className="flex-1 h-2 rounded-full bg-paper-dark overflow-hidden">
+                  <div className="h-full bg-amber-400 rounded-full" style={{ width: `${row.percent}%` }} />
+                </div>
+                <span className="w-8 text-right text-stone tnum">{row.count}</span>
+              </button>
+            ))}
+            {starFilter > 0 && (
+              <button
+                type="button"
+                onClick={() => setStarFilter(0)}
+                className="text-xs font-semibold text-trail-600 mt-1"
+              >
+                Clear {starFilter}★ filter
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {filteredReviews.length === 0 ? (
+        <p className="text-stone text-sm">
+          {starFilter > 0
+            ? `No ${starFilter}-star reviews yet.`
+            : "No reviews yet — be the first to share your experience."}
+        </p>
       ) : (
         <div className="grid sm:grid-cols-2 gap-5">
-          {reviews.map((r, i) => (
+          {filteredReviews.map((r, i) => (
             <motion.div
               key={r._id}
               initial={{ opacity: 0, y: 12 }}
@@ -132,7 +187,10 @@ const ProductReviews = ({ slug }) => {
               <div className="flex items-center gap-2 mb-2">
                 <div className="flex gap-0.5">
                   {Array.from({ length: 5 }).map((_, s) => (
-                    <Star key={s} className={`w-3.5 h-3.5 ${s < r.rating ? "fill-amber-400 text-amber-400" : "text-paper-dark"}`} />
+                    <Star
+                      key={s}
+                      className={`w-3.5 h-3.5 ${s < r.rating ? "fill-amber-400 text-amber-400" : "text-paper-dark"}`}
+                    />
                   ))}
                 </div>
                 <span className="flex items-center gap-1 text-[10px] font-bold text-trail-600 bg-trail-50 px-2 py-0.5 rounded-full">
@@ -141,7 +199,10 @@ const ProductReviews = ({ slug }) => {
               </div>
               <p className="text-sm text-ink/80 leading-relaxed mb-3">{r.comment}</p>
               <p className="text-xs font-semibold text-ink">
-                {r.user?.name} <span className="text-stone font-normal">· {new Date(r.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</span>
+                {r.user?.name}{" "}
+                <span className="text-stone font-normal">
+                  · {new Date(r.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                </span>
               </p>
             </motion.div>
           ))}

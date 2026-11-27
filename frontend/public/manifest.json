@@ -1,0 +1,21 @@
+{
+  "name": "TeenRaah \u2014 Find Your Path",
+  "short_name": "TeenRaah",
+  "description": "Backpacks, totes, wallets and travel gear built for wherever you're headed.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F7F5F0",
+  "theme_color": "#0B0B0C",
+  "icons": [
+    {
+      "src": "/logo-icon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

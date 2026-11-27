@@ -7,9 +7,9 @@ import ChatMessageBubble from "./ChatMessageBubble";
 import TypingIndicator from "./TypingIndicator";
 
 const QUICK_REPLIES = [
-  "Recommend a backpack for me",
+  '15.6" laptop backpack under ₹2,000',
+  "Best bag for a 5-day trip",
   "Where's my order?",
-  "What's your return policy?",
   "Design me a custom bag",
 ];
 
@@ -33,10 +33,17 @@ const ChatWidget = () => {
   }, [messages]);
 
   useEffect(() => {
-    if (open) {
-      setHasOpenedOnce(true);
-      setTimeout(() => inputRef.current?.focus(), 350);
-    }
+    if (!open) return;
+    setHasOpenedOnce(true);
+    const focusTimer = setTimeout(() => inputRef.current?.focus(), 300);
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      clearTimeout(focusTimer);
+      window.removeEventListener("keydown", onKeyDown);
+    };
   }, [open]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
@@ -66,7 +73,7 @@ const ChatWidget = () => {
           );
         },
         onAttachments: (attachments) => {
-          setMessages((prev) => (prev.map((m) => (m.id === assistantMsg.id ? { ...m, attachments } : m))));
+          setMessages((prev) => prev.map((m) => (m.id === assistantMsg.id ? { ...m, attachments } : m)));
         },
         onDone: () => {
           setMessages((prev) => prev.map((m) => (m.id === assistantMsg.id ? { ...m, streaming: false } : m)));
@@ -95,16 +102,17 @@ const ChatWidget = () => {
   return (
     <>
       <motion.button
+        type="button"
         onClick={() => setOpen((v) => !v)}
         whileHover={{ scale: 1.06 }}
         whileTap={{ scale: 0.95 }}
         aria-label={open ? "Close TeenRaah Assistant" : "Open TeenRaah Assistant"}
-        className="fixed bottom-5 right-5 z-[70] w-14 h-14 rounded-full bg-ink text-white shadow-lift flex items-center justify-center"
+        className="no-print fixed bottom-20 md:bottom-5 right-4 md:right-5 z-[68] w-12 h-12 md:w-14 md:h-14 rounded-full bg-ink text-white shadow-lift flex items-center justify-center"
       >
         {!hasOpenedOnce && (
           <motion.span
             className="absolute inset-0 rounded-full bg-trail-400"
-            animate={{ scale: [1, 1.5], opacity: [0.5, 0] }}
+            animate={{ scale: [1, 1.45], opacity: [0.45, 0] }}
             transition={{ duration: 1.8, repeat: Infinity, ease: "easeOut" }}
           />
         )}
@@ -128,7 +136,9 @@ const ChatWidget = () => {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 24, scale: 0.96 }}
             transition={{ type: "spring", damping: 26, stiffness: 300 }}
-            className="fixed bottom-24 right-5 z-[70] w-[calc(100vw-2.5rem)] max-w-[380px] h-[min(600px,calc(100vh-140px))] bg-paper rounded-2xl shadow-lift overflow-hidden flex flex-col border border-ink/10"
+            role="dialog"
+            aria-label="TeenRaah Shopping Assistant"
+            className="no-print fixed inset-0 md:inset-auto md:bottom-24 md:right-5 z-[72] w-full md:w-[390px] h-dvh-safe md:h-[min(620px,calc(100dvh-130px))] bg-paper md:rounded-2xl shadow-lift overflow-hidden flex flex-col border-0 md:border md:border-ink/10"
           >
             {/* Header */}
             <div className="relative bg-ink text-white px-4 py-3.5 flex items-center gap-3 shrink-0">
@@ -138,8 +148,16 @@ const ChatWidget = () => {
               </div>
               <div className="relative flex-1 min-w-0">
                 <p className="font-display text-sm tracking-wide leading-none">TEENRAAH ASSISTANT</p>
-                <p className="text-[10px] text-white/50 mt-1">Find Your Path</p>
+                <p className="text-[10px] text-white/60 mt-1">Gear advisor &amp; order help</p>
               </div>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="relative p-2 -mr-1 text-white/80 hover:text-white rounded-full"
+                aria-label="Close assistant"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
             {/* Messages */}
@@ -150,12 +168,15 @@ const ChatWidget = () => {
                     <Compass className="w-5 h-5 text-trail-600" />
                   </div>
                   <p className="text-sm font-semibold text-ink mb-1">
-                    {user ? `Hi ${user.name.split(" ")[0]}, how can I help?` : "Hi! How can I help you today?"}
+                    {user ? `Hi ${user.name.split(" ")[0]}, how can I help?` : "Hi! Looking for the right bag?"}
                   </p>
-                  <p className="text-xs text-stone mb-4">Ask about products, orders, or describe a bag you're imagining.</p>
+                  <p className="text-xs text-stone mb-4">
+                    Ask for laptop-size recommendations, cabin-friendly packs, order tracking, or custom concepts.
+                  </p>
                   <div className="flex flex-wrap gap-1.5 justify-center">
                     {QUICK_REPLIES.map((q) => (
                       <button
+                        type="button"
                         key={q}
                         onClick={() => sendMessage(q)}
                         className="text-[11px] font-medium bg-white border border-ink/10 rounded-full px-3 py-1.5 hover:border-trail-400 hover:text-trail-600 transition-colors"
@@ -175,19 +196,19 @@ const ChatWidget = () => {
             </div>
 
             {/* Input */}
-            <form onSubmit={handleSubmit} className="p-3 border-t border-ink/8 bg-white flex items-center gap-2 shrink-0">
+            <form onSubmit={handleSubmit} className="p-3 pb-safe border-t border-ink/8 bg-white flex items-center gap-2 shrink-0">
               <input
                 ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Ask about bags, orders, returns…"
+                placeholder="Ask about bags, sizes, orders, returns…"
                 disabled={isStreaming}
                 className="flex-1 px-3.5 py-2.5 rounded-full border border-ink/12 text-sm outline-none focus:border-trail-500 disabled:opacity-60"
               />
               <button
                 type="submit"
                 disabled={isStreaming || !input.trim()}
-                className="w-9 h-9 rounded-full bg-ink text-white flex items-center justify-center shrink-0 disabled:opacity-40"
+                className="w-10 h-10 rounded-full bg-ink text-white flex items-center justify-center shrink-0 disabled:opacity-40"
                 aria-label="Send message"
               >
                 <Send className="w-4 h-4" />

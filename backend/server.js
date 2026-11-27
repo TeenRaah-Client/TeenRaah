@@ -57,6 +57,7 @@ import adminRoutes, {
 } from "./routes/adminRoutes.js";
 
 import chatRoutes from "./routes/chatRoutes.js";
+import subscriberRoutes from "./routes/subscriberRoutes.js";
 
 
 const app = express();
@@ -409,6 +410,11 @@ app.use(
 app.use(
   "/api/chat",
   chatRoutes
+);
+
+app.use(
+  "/api/subscribers",
+  subscriberRoutes
 );
 
 

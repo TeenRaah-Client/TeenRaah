@@ -17,6 +17,7 @@ import razorpay from "../config/razorpay.js";
 import { canRequestReturn, RETURN_WINDOW_DAYS } from "../utils/returnPolicy.js";
 import { markRefundProcessed } from "../utils/refundReconciliation.js";
 import { getFullRefundAmountPaise, isFullOrderRefund } from "../utils/refundPolicy.js";
+import { buildOrderInvoiceData } from "../utils/invoiceBuilder.js";
 
 // Core order-finalization logic, usable both from the browser-driven
 // /api/payment/verify flow AND from the Razorpay webhook (webhookController.js)
@@ -168,6 +169,18 @@ export const getOrderById = asyncHandler(async (req, res) => {
     return fail(res, "Not authorized to view this order", 403);
   }
   return ok(res, { order });
+});
+
+// @route GET /api/orders/:id/invoice
+// Returns structured GST tax invoice data for the order owner or admin.
+export const getOrderInvoice = asyncHandler(async (req, res) => {
+  const order = await Order.findById(req.params.id);
+  if (!order) return fail(res, "Order not found", 404);
+  if (order.user.toString() !== req.user._id.toString() && req.user.role !== "admin") {
+    return fail(res, "Not authorized to view this invoice", 403);
+  }
+  const invoice = buildOrderInvoiceData(order);
+  return ok(res, { invoice });
 });
 
 // ---------------- Admin ----------------

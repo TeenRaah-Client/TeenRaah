@@ -1,5 +1,6 @@
 import Product from "../models/Product.js";
 import Order from "../models/Order.js";
+import { buildProductFilterQuery } from "./productQuery.js";
 
 export const CHAT_CATEGORIES = [
   "Backpacks",
@@ -87,12 +88,16 @@ export const buildToolDefinitions = ({ isAuthenticated }) => {
 };
 
 const summarizeProduct = (p) => ({
+  _id: String(p._id),
   name: p.name,
   slug: p.slug,
   category: p.category,
   price: p.price,
   mrp: p.mrp,
-  image: p.images[0]?.url,
+  image: p.images?.[0]?.url || "",
+  colors: Array.isArray(p.colors) ? p.colors : [],
+  capacityLitres: p.capacityLitres || null,
+  ratingsAverage: p.ratingsAverage || 4.5,
   inStock: p.stock > 0,
 });
 
@@ -102,11 +107,12 @@ const summarizeProduct = (p) => ({
 export const executeToolCall = async (name, args = {}, { userId } = {}) => {
   switch (name) {
     case "search_products": {
-      const query = { isActive: true };
-      if (args.category) query.category = args.category;
-      if (args.maxPrice) query.price = { $lte: Number(args.maxPrice) };
-      if (args.query) query.$text = { $search: String(args.query) };
-      const products = await Product.find(query).limit(5);
+      const query = buildProductFilterQuery({
+        category: args.category,
+        maxPrice: args.maxPrice,
+        search: args.query,
+      });
+      const products = await Product.find(query).sort({ ratingsAverage: -1, createdAt: -1 }).limit(5);
       return { products: products.map(summarizeProduct) };
     }
 

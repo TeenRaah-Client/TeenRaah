@@ -5,6 +5,7 @@
 @layer base {
   html {
     scroll-behavior: smooth;
+    -webkit-tap-highlight-color: transparent;
   }
 
   ::selection {
@@ -25,6 +26,13 @@
     letter-spacing: 0.01em;
   }
 
+  /* Prevent iOS Safari auto-zoom when focusing inputs */
+  @media (max-width: 767px) {
+    input, select, textarea {
+      font-size: 16px;
+    }
+  }
+
   /* Tabular numerals for prices so digits align in carts/tables. */
   .tnum {
     font-variant-numeric: tabular-nums;
@@ -32,10 +40,6 @@
 }
 
 @layer utilities {
-  /* The signature motif: concentric contour lines standing in for the
-     brand's "path" idea. Two variants — light lines for dark (ink) panels,
-     dark lines for paper panels — used sparingly as texture, never as
-     the whole show. */
   .bg-topo-dark {
     background-image:
       repeating-radial-gradient(circle at 15% 20%, transparent 0, transparent 22px, rgba(255,255,255,0.05) 23px, transparent 24px),
@@ -52,12 +56,24 @@
   .text-balance {
     text-wrap: balance;
   }
+
+  .pb-safe {
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  }
+
+  .h-dvh-safe {
+    height: 100dvh;
+  }
+
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
 }
 
-/* Leaflet's default marker icons resolve relative to a bundler-specific
-   path and break under Vite unless overridden — components set their own
-   L.icon() with explicit URLs (see MapPicker.jsx), but this keeps the
-   base popup/attribution chrome on-brand. */
 .leaflet-container {
   font-family: theme("fontFamily.body");
   border-radius: 0.75rem;
@@ -72,5 +88,15 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+@media print {
+  header, footer, nav, .no-print {
+    display: none !important;
+  }
+  body {
+    background: #ffffff !important;
+    color: #0B0B0C !important;
   }
 }

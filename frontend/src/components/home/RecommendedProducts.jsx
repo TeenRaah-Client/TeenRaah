@@ -3,18 +3,23 @@ import { motion } from "framer-motion";
 import api from "../../api/axios";
 import ProductCard from "../ui/ProductCard";
 import { ProductCardSkeleton } from "../ui/Loader";
+import { dedupeProducts } from "../../utils/storefront";
 
-export default function RecommendedProducts() {
+export default function RecommendedProducts({ excludeIds = [] }) {
   const [products, setProducts] = useState([]);
   const [personalized, setPersonalized] = useState(false);
   const [loading, setLoading] = useState(true);
+  const excludeKey = excludeIds.join(",");
 
   useEffect(() => {
     let active = true;
-    api.get("/products/recommendations")
+    api
+      .get("/products/recommendations")
       .then(({ data }) => {
         if (!active) return;
-        setProducts(Array.isArray(data.products) ? data.products : []);
+        const raw = Array.isArray(data.products) ? data.products : [];
+        const unique = dedupeProducts(raw, excludeIds);
+        setProducts((unique.length > 0 ? unique : raw).slice(0, 4));
         setPersonalized(Boolean(data.personalized));
       })
       .catch(() => {
@@ -23,8 +28,11 @@ export default function RecommendedProducts() {
       .finally(() => {
         if (active) setLoading(false);
       });
-    return () => { active = false; };
-  }, []);
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [excludeKey]);
 
   if (!loading && products.length === 0) return null;
 
@@ -53,10 +61,10 @@ export default function RecommendedProducts() {
             : "A considered selection from the TeenRaah collection."}
         </p>
       </div>
-      <div className="grid grid-cols-2 gap-5 md:grid-cols-4 md:gap-6">
+      <div className="grid grid-cols-2 gap-4 sm:gap-5 md:grid-cols-4 md:gap-6">
         {loading
           ? Array.from({ length: 4 }).map((_, index) => <ProductCardSkeleton key={index} />)
-          : products.slice(0, 4).map((product) => <ProductCard key={product._id} product={product} />)}
+          : products.map((product) => <ProductCard key={product._id} product={product} />)}
       </div>
     </section>
   );

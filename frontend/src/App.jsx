@@ -1,3 +1,4 @@
+import { useEffect, useState, useCallback } from "react";
 import { Routes, Route, useLocation } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";
 import { Toaster } from "react-hot-toast";
@@ -5,7 +6,10 @@ import { Toaster } from "react-hot-toast";
 import Navbar from "./components/layout/Navbar";
 import Footer from "./components/layout/Footer";
 import CartDrawer from "./components/layout/CartDrawer";
+import MobileBottomNav from "./components/layout/MobileBottomNav";
+import SearchOverlay from "./components/layout/SearchOverlay";
 import ChatWidget from "./components/chat/ChatWidget";
+import ErrorBoundary from "./components/ui/ErrorBoundary";
 import { ProtectedRoute, AdminRoute } from "./components/ui/ProtectedRoute";
 import PageTransition from "./components/ui/PageTransition";
 
@@ -44,16 +48,15 @@ import AdminAuditLog from "./pages/admin/AdminAuditLog";
 import AdminSettings from "./pages/admin/AdminSettings";
 import AdminLayout from "./components/admin/AdminLayout";
 
-// The client hasn't settled on a final domain/name yet, so the admin panel's
-// entire path is one env var — nothing in the router below is hardcoded.
 const ADMIN_PATH = import.meta.env.VITE_ADMIN_PATH || "/tr-control-9273";
 
-const StorefrontLayout = ({ children }) => (
-  <div className="min-h-screen flex flex-col bg-paper">
-    <Navbar />
+const StorefrontLayout = ({ children, onOpenSearch }) => (
+  <div className="min-h-screen flex flex-col bg-paper pb-16 md:pb-0">
+    <Navbar onOpenSearch={onOpenSearch} />
     <CartDrawer />
     <main className="flex-1">{children}</main>
     <Footer />
+    <MobileBottomNav onOpenSearch={onOpenSearch} />
     <ChatWidget />
   </div>
 );
@@ -61,9 +64,35 @@ const StorefrontLayout = ({ children }) => (
 function App() {
   const location = useLocation();
   const isAdminRoute = location.pathname.startsWith(ADMIN_PATH);
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  const openSearch = useCallback(() => setSearchOpen(true), []);
+  const closeSearch = useCallback(() => setSearchOpen(false), []);
+
+  // Desktop power-user shortcut: press "/" outside form fields to open search
+  useEffect(() => {
+    if (isAdminRoute) return;
+    const onKeyDown = (e) => {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const tag = document.activeElement?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || document.activeElement?.isContentEditable) {
+        return;
+      }
+      e.preventDefault();
+      setSearchOpen(true);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isAdminRoute]);
+
+  const wrapStorefront = (element) => (
+    <StorefrontLayout onOpenSearch={openSearch}>
+      <PageTransition>{element}</PageTransition>
+    </StorefrontLayout>
+  );
 
   return (
-    <>
+    <ErrorBoundary>
       <Toaster
         position="top-center"
         toastOptions={{
@@ -77,6 +106,8 @@ function App() {
           success: { iconTheme: { primary: "#E3A857", secondary: "#0B0B0C" } },
         }}
       />
+
+      {!isAdminRoute && <SearchOverlay open={searchOpen} onClose={closeSearch} />}
 
       <AnimatePresence mode="wait">
         {isAdminRoute ? (
@@ -107,94 +138,31 @@ function App() {
           </Routes>
         ) : (
           <Routes location={location} key={location.pathname}>
-            <Route path="/" element={<StorefrontLayout><PageTransition><Home /></PageTransition></StorefrontLayout>} />
-            <Route path="/shop" element={<StorefrontLayout><PageTransition><Shop /></PageTransition></StorefrontLayout>} />
-            <Route path="/compare" element={<StorefrontLayout><PageTransition><Compare /></PageTransition></StorefrontLayout>} />
-            <Route path="/product/:slug" element={<StorefrontLayout><PageTransition><ProductDetail /></PageTransition></StorefrontLayout>} />
-            <Route path="/cart" element={<StorefrontLayout><PageTransition><Cart /></PageTransition></StorefrontLayout>} />
-            <Route path="/login" element={<StorefrontLayout><PageTransition><Login /></PageTransition></StorefrontLayout>} />
-            <Route path="/register" element={<StorefrontLayout><PageTransition><Register /></PageTransition></StorefrontLayout>} />
-            <Route path="/verify-otp" element={<StorefrontLayout><PageTransition><VerifyOtp /></PageTransition></StorefrontLayout>} />
-            <Route path="/privacy" element={<StorefrontLayout><PageTransition><Privacy /></PageTransition></StorefrontLayout>} />
-            <Route path="/terms" element={<StorefrontLayout><PageTransition><Terms /></PageTransition></StorefrontLayout>} />
-            <Route path="/shipping-returns" element={<StorefrontLayout><PageTransition><ShippingReturns /></PageTransition></StorefrontLayout>} />
+            <Route path="/" element={wrapStorefront(<Home />)} />
+            <Route path="/shop" element={wrapStorefront(<Shop />)} />
+            <Route path="/compare" element={wrapStorefront(<Compare />)} />
+            <Route path="/product/:slug" element={wrapStorefront(<ProductDetail />)} />
+            <Route path="/cart" element={wrapStorefront(<Cart />)} />
+            <Route path="/login" element={wrapStorefront(<Login />)} />
+            <Route path="/register" element={wrapStorefront(<Register />)} />
+            <Route path="/verify-otp" element={wrapStorefront(<VerifyOtp />)} />
+            <Route path="/privacy" element={wrapStorefront(<Privacy />)} />
+            <Route path="/terms" element={wrapStorefront(<Terms />)} />
+            <Route path="/shipping-returns" element={wrapStorefront(<ShippingReturns />)} />
 
-            <Route
-              path="/checkout"
-              element={
-                <StorefrontLayout>
-                  <PageTransition>
-                    <ProtectedRoute><Checkout /></ProtectedRoute>
-                  </PageTransition>
-                </StorefrontLayout>
-              }
-            />
-            <Route
-              path="/orders"
-              element={
-                <StorefrontLayout>
-                  <PageTransition>
-                    <ProtectedRoute><MyOrders /></ProtectedRoute>
-                  </PageTransition>
-                </StorefrontLayout>
-              }
-            />
-            <Route
-              path="/orders/:id"
-              element={
-                <StorefrontLayout>
-                  <PageTransition>
-                    <ProtectedRoute><OrderTracking /></ProtectedRoute>
-                  </PageTransition>
-                </StorefrontLayout>
-              }
-            />
-            <Route
-              path="/addresses"
-              element={
-                <StorefrontLayout>
-                  <PageTransition>
-                    <ProtectedRoute><Addresses /></ProtectedRoute>
-                  </PageTransition>
-                </StorefrontLayout>
-              }
-            />
-            <Route
-              path="/referral"
-              element={
-                <StorefrontLayout>
-                  <PageTransition>
-                    <ProtectedRoute><Referral /></ProtectedRoute>
-                  </PageTransition>
-                </StorefrontLayout>
-              }
-            />
-            <Route
-              path="/wishlist"
-              element={
-                <StorefrontLayout>
-                  <PageTransition>
-                    <ProtectedRoute><Wishlist /></ProtectedRoute>
-                  </PageTransition>
-                </StorefrontLayout>
-              }
-            />
-            <Route
-              path="/profile"
-              element={
-                <StorefrontLayout>
-                  <PageTransition>
-                    <ProtectedRoute><Profile /></ProtectedRoute>
-                  </PageTransition>
-                </StorefrontLayout>
-              }
-            />
+            <Route path="/checkout" element={wrapStorefront(<ProtectedRoute><Checkout /></ProtectedRoute>)} />
+            <Route path="/orders" element={wrapStorefront(<ProtectedRoute><MyOrders /></ProtectedRoute>)} />
+            <Route path="/orders/:id" element={wrapStorefront(<ProtectedRoute><OrderTracking /></ProtectedRoute>)} />
+            <Route path="/addresses" element={wrapStorefront(<ProtectedRoute><Addresses /></ProtectedRoute>)} />
+            <Route path="/referral" element={wrapStorefront(<ProtectedRoute><Referral /></ProtectedRoute>)} />
+            <Route path="/wishlist" element={wrapStorefront(<ProtectedRoute><Wishlist /></ProtectedRoute>)} />
+            <Route path="/profile" element={wrapStorefront(<ProtectedRoute><Profile /></ProtectedRoute>)} />
 
-            <Route path="*" element={<StorefrontLayout><PageTransition><NotFound /></PageTransition></StorefrontLayout>} />
+            <Route path="*" element={wrapStorefront(<NotFound />)} />
           </Routes>
         )}
       </AnimatePresence>
-    </>
+    </ErrorBoundary>
   );
 }
 

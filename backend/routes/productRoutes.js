@@ -6,6 +6,7 @@ import { productValidator, reviewValidator } from "../utils/validators.js";
 import {
   getProducts,
   getCategories,
+  getProductSuggestions,
   getProductBySlug,
   createProduct,
   updateProduct,
@@ -24,6 +25,7 @@ const router = express.Router();
 // ---- Public ----
 router.get("/", getProducts);
 router.get("/categories", getCategories);
+router.get("/suggestions", getProductSuggestions);
 router.get("/recommendations", attachUserIfPresent, getProductRecommendations);
 router.get("/:slug", getProductBySlug);
 

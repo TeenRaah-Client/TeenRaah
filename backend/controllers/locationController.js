@@ -2,6 +2,7 @@ import asyncHandler from "express-async-handler";
 import axios from "axios";
 import { ok, fail } from "../utils/apiResponse.js";
 import { cacheGet, cacheSet } from "../config/redis.js";
+import { estimateDeliveryForPincode } from "../utils/pincodeServiceability.js";
 
 // Free, no-API-key geocoding via OpenStreetMap Nominatim — this is what
 // powers the "search your address" box on the Zomato/Blinkit-style address
@@ -73,4 +74,16 @@ export const reverseGeocode = asyncHandler(async (req, res) => {
   } catch (err) {
     return fail(res, "Couldn't resolve that location, please enter your address manually", 502);
   }
+});
+
+
+// @route GET /api/location/pincode/:pincode?amount=
+// Public endpoint so any shopper can check delivery timelines on ProductDetail.
+export const checkPincodeServiceability = asyncHandler(async (req, res) => {
+  const orderAmount = Number(req.query.amount) || 0;
+  const estimate = estimateDeliveryForPincode(req.params.pincode, { orderAmount });
+  if (!estimate.valid) {
+    return fail(res, estimate.message, 400);
+  }
+  return ok(res, { estimate });
 });
